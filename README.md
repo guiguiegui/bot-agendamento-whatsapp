@@ -38,16 +38,18 @@ A mensagem recebida vira um **job na fila** em vez de ser processada na hora. Is
 2. **Não trava o recebimento.** A conexão com o WhatsApp nunca fica esperando o banco responder — ela só enfileira e segue recebendo.
 3. **Idempotência.** Cada mensagem do WhatsApp tem um id único, usado como `jobId` — se a Baileys entregar o mesmo evento duas vezes (acontece), o bot não processa a mesma mensagem duplicada.
 
-A lógica de conversa (`src/conversation/router.ts`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Elas recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 99 testes rodando em poucos segundos. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade.
+A lógica de conversa (`src/conversation/router.ts`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Elas recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 99 testes rodando em poucos segundos. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade (ver [ADR 1](docs/adr/0001-arquitetura-hexagonal.md)).
 
 ## Por que essas escolhas técnicas
 
-- **Multi-tenant numa instância só, sem microsserviço por cliente**: cada negócio cadastrado (tabela `negocios`) tem sua própria conexão WhatsApp, catálogo, horário e política de cancelamento — isolados por `negocio_id` no banco — mas compartilham a mesma fila, worker e processo. Adicionar um negócio novo não exige subir infraestrutura nova (ver `## Cadastrando um negócio novo`).
-- **SQLite direto (`better-sqlite3`), sem ORM**: um Postgres separado seria mais uma peça pra manter no ar sem ganho real na escala de pequenos negócios que esse bot atende — mesmo com vários negócios, ainda é um arquivo só, com isolamento lógico (coluna), não físico. `better-sqlite3` é síncrono (sem overhead de round-trip) e backup é copiar um arquivo.
-- **Redis + BullMQ pra fila e sessão**: é a peça que realmente precisa ser compartilhada se um dia rodar mais de uma instância do bot, e já vem pronta pra isso.
-- **Máquina de estados explícita, não regex solto**: cada conversa tem um estado bem definido (`MENU`, `AGENDAR_DATA`, etc.), então "o que esse número '1' significa" nunca é ambíguo — depende só do estado atual, testado isoladamente.
+Resumo rápido — o raciocínio completo de cada uma está nos [ADRs](docs/adr/README.md):
 
-### Sobre a biblioteca do WhatsApp
+- **Multi-tenant numa instância só, sem microsserviço por cliente** ([ADR 6](docs/adr/0006-multi-tenant-compartilhado.md)): cada negócio cadastrado (tabela `negocios`) tem sua própria conexão WhatsApp, catálogo, horário e política de cancelamento — isolados por `negocio_id` no banco — mas compartilham a mesma fila, worker e processo. Adicionar um negócio novo não exige subir infraestrutura nova (ver `## Cadastrando um negócio novo`).
+- **SQLite direto (`better-sqlite3`), sem ORM** ([ADR 4](docs/adr/0004-sqlite-sem-orm.md)): um Postgres separado seria mais uma peça pra manter no ar sem ganho real na escala de pequenos negócios que esse bot atende — mesmo com vários negócios, ainda é um arquivo só, com isolamento lógico (coluna), não físico. `better-sqlite3` é síncrono (sem overhead de round-trip) e backup é copiar um arquivo.
+- **Redis + BullMQ pra fila e sessão** ([ADR 3](docs/adr/0003-fila-assincrona-bullmq-redis.md)): é a peça que realmente precisa ser compartilhada se um dia rodar mais de uma instância do bot, e já vem pronta pra isso.
+- **Máquina de estados explícita, não regex solto** ([ADR 2](docs/adr/0002-maquina-de-estados-explicita.md)): cada conversa tem um estado bem definido (`MENU`, `AGENDAR_DATA`, etc.), então "o que esse número '1' significa" nunca é ambíguo — depende só do estado atual, testado isoladamente.
+
+### Sobre a biblioteca do WhatsApp ([ADR 5](docs/adr/0005-baileys-nao-oficial.md))
 
 Este projeto usa [Baileys](https://github.com/WhiskeySockets/Baileys), que conecta como um WhatsApp Web (escaneando QR code) — **não é a API oficial da Meta**. Pra um negócio pequeno validando a ideia, isso é o caminho mais rápido e sem custo: não precisa de aprovação de Business Manager nem número dedicado da Meta. A troca é que é uma engenharia reversa não-oficial: o WhatsApp pode, em teoria, banir o número por automação. Na prática, uso moderado (um número dedicado ao negócio, sem disparo em massa) é o padrão usado por boa parte do mercado de automação pra pequenos negócios no Brasil hoje.
 
@@ -122,7 +124,10 @@ src/
   commands/        comandos administrativos (fora do fluxo do cliente)
 test/              testes unitários e de integração (SQLite real)
 scripts/           smoke test de ponta a ponta (fila + Redis reais) e o CLI de negócios
+docs/adr/          decisões arquiteturais (contexto, decisão, consequências)
 ```
+
+Por que cada escolha técnica foi feita — com mais detalhe do que cabe neste README — está registrado como [Architecture Decision Records em `docs/adr/`](docs/adr/README.md).
 
 ---
 
