@@ -11,7 +11,7 @@ export function interpretarData(textoOriginal: string, agora: Date): Date | null
   if (texto === "hoje") return startOfDay(agora);
   if (texto === "amanha") return startOfDay(addDays(agora, 1));
 
-  const match = texto.match(/^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/);
+  const match = /^(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?$/.exec(texto);
   if (!match) return null;
 
   const dia = Number.parseInt(match[1]!, 10);

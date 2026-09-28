@@ -10,7 +10,7 @@ export interface AgendamentoResumo {
 /**
  * Porta (no sentido de arquitetura hexagonal) entre a máquina de estados da
  * conversa e a persistência real. O router só enxerga esta interface — em
- * produção ela é implementada com Prisma (ver src/db), e nos testes é
+ * produção ela é implementada com better-sqlite3 (ver src/db), e nos testes é
  * implementada por um fake em memória, sem precisar de banco nenhum.
  */
 export interface AgendaPort {

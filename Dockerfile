@@ -1,21 +1,26 @@
 # ---- build ----
-FROM node:20-slim AS build
+FROM node:22-slim AS build
 WORKDIR /app
+
+# better-sqlite3 compila um binding nativo no install (sem binário pré-buildado
+# publicado pra essa versão) — precisa de toolchain de build só nesta etapa.
+RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY package.json package-lock.json* ./
 RUN npm ci
 
 COPY . .
 RUN npm run build
+RUN npm prune --omit=dev
 
 # ---- runtime ----
-FROM node:20-slim AS runtime
+FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
-
+COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 
 # Sessão do WhatsApp e banco SQLite ficam aqui — monte um volume nesse

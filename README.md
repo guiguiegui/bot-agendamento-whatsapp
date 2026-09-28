@@ -2,7 +2,7 @@
 
 Bot de atendimento e agendamento por WhatsApp para pequenos negócios (barbearias, salões, clínicas). Projeto de portfólio — mesmo cliente fictício da [landing page](../barbearia.html), pra mostrar o pacote completo: site + automação de atendimento.
 
-Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, testes automatizados (29 testes, incluindo um teste de ponta a ponta contra Redis real) e arquitetura pensada pra rodar em produção, não só pra demo.
+Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, 29 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
 
 ## O que ele faz
 
@@ -52,7 +52,7 @@ Este projeto usa [Baileys](https://github.com/WhiskeySockets/Baileys), que conec
 
 ## Rodando localmente
 
-Pré-requisitos: Node 20+, um Redis (local ou Docker).
+Pré-requisitos: Node 22+, um Redis (local ou Docker).
 
 ```bash
 npm install

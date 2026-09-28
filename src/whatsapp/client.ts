@@ -45,12 +45,13 @@ export class BaileysMessagingClient implements IMessagingClient {
     const socket = makeWASocket({
       version,
       auth: state,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      logger: logger.child({ modulo: "baileys" }) as any,
+      logger: logger.child({ modulo: "baileys" }),
     });
     this.socket = socket;
 
-    socket.ev.on("creds.update", saveCreds);
+    socket.ev.on("creds.update", () => {
+      void saveCreds();
+    });
     socket.ev.on("connection.update", (update) => this.aoAtualizarConexao(update));
     socket.ev.on("messages.upsert", (evento) => {
       void this.aoReceberMensagens(evento);
@@ -86,14 +87,14 @@ export class BaileysMessagingClient implements IMessagingClient {
   }
 
   private async aoReceberMensagens(evento: {
-    messages: Array<{
+    messages: {
       key: { remoteJid?: string | null; fromMe?: boolean | null; id?: string | null };
       message?: {
         conversation?: string | null;
         extendedTextMessage?: { text?: string | null } | null;
         buttonsResponseMessage?: { selectedButtonId?: string | null } | null;
       } | null;
-    }>;
+    }[];
     type: string;
   }): Promise<void> {
     if (evento.type !== "notify") return;
