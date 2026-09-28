@@ -30,7 +30,12 @@ export default tseslint.config(
     // permitir trocar o backend sem tocar no router; nada aqui precisa de
     // await. Ao adicionar uma nova implementação síncrona de uma dessas
     // portas, inclua o arquivo nesta lista.
-    files: ["src/db/agendaRepository.ts", "test/fakes/agendaPortFake.ts", "test/admin.test.ts"],
+    files: [
+      "src/db/agendaRepository.ts",
+      "test/fakes/agendaPortFake.ts",
+      "test/admin.test.ts",
+      "scripts/smoke-e2e.ts",
+    ],
     rules: {
       "@typescript-eslint/require-await": "off",
     },

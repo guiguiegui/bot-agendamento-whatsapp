@@ -8,6 +8,10 @@ import {
   tentarAgendar,
   type IntervaloAgendado,
 } from "../src/domain/scheduling.js";
+import { NEGOCIO_TESTE } from "./fakes/negocioFake.js";
+
+const { horarioFuncionamento: HORARIO, janelaAgendamentoDias: JANELA, antecedenciaMinimaCancelamentoHoras: ANTECEDENCIA } =
+  NEGOCIO_TESTE;
 
 // Datas fixas de referência (evita testes "flaky" por dependerem do dia atual):
 // 2026-09-29 é uma terça-feira (aberto 09h-19h)
@@ -39,11 +43,18 @@ describe("intervalosSeSobrepoem", () => {
 
 describe("gerarHorariosCandidatos", () => {
   it("retorna vazio em dia fechado (domingo)", () => {
-    expect(gerarHorariosCandidatos(DOMINGO(0, 0), 40)).toHaveLength(0);
+    expect(
+      gerarHorariosCandidatos({ horarioFuncionamento: HORARIO, data: DOMINGO(0, 0), duracaoMin: 40 }),
+    ).toHaveLength(0);
   });
 
   it("respeita abertura, fechamento e duração do serviço", () => {
-    const candidatos = gerarHorariosCandidatos(TERCA(0, 0), 40, 30);
+    const candidatos = gerarHorariosCandidatos({
+      horarioFuncionamento: HORARIO,
+      data: TERCA(0, 0),
+      duracaoMin: 40,
+      passoMin: 30,
+    });
     expect(candidatos.length).toBeGreaterThan(0);
 
     const primeiro = candidatos[0]!;
@@ -62,14 +73,26 @@ describe("gerarHorariosCandidatos", () => {
 describe("horariosDisponiveis", () => {
   it("remove horários que já passaram no dia corrente", () => {
     const agoraNoMeioDoDia = TERCA(13, 0);
-    const candidatos = horariosDisponiveis(TERCA(0, 0), 40, [], agoraNoMeioDoDia);
+    const candidatos = horariosDisponiveis({
+      horarioFuncionamento: HORARIO,
+      data: TERCA(0, 0),
+      duracaoMin: 40,
+      agendamentosExistentes: [],
+      agora: agoraNoMeioDoDia,
+    });
     expect(candidatos.every((h) => h >= agoraNoMeioDoDia)).toBe(true);
     expect(candidatos.some((h) => h.getHours() < 13)).toBe(false);
   });
 
   it("remove horários que colidem com agendamentos existentes", () => {
     const existentes: IntervaloAgendado[] = [{ inicio: TERCA(10, 0), fim: TERCA(10, 40) }];
-    const candidatos = horariosDisponiveis(TERCA(0, 0), 40, existentes, AGORA_REFERENCIA);
+    const candidatos = horariosDisponiveis({
+      horarioFuncionamento: HORARIO,
+      data: TERCA(0, 0),
+      duracaoMin: 40,
+      agendamentosExistentes: existentes,
+      agora: AGORA_REFERENCIA,
+    });
     const temConflito = candidatos.some(
       (inicio) => intervalosSeSobrepoem({ inicio, fim: addMinutes(inicio, 40) }, existentes[0]!),
     );
@@ -80,6 +103,8 @@ describe("horariosDisponiveis", () => {
 describe("tentarAgendar", () => {
   it("aceita um horário válido, dentro do expediente e sem conflitos", () => {
     const resultado = tentarAgendar({
+      horarioFuncionamento: HORARIO,
+      janelaAgendamentoDias: JANELA,
       inicio: TERCA(10, 0),
       duracaoMin: 40,
       agendamentosExistentes: [],
@@ -90,6 +115,8 @@ describe("tentarAgendar", () => {
 
   it("recusa horário no passado", () => {
     const resultado = tentarAgendar({
+      horarioFuncionamento: HORARIO,
+      janelaAgendamentoDias: JANELA,
       inicio: TERCA(10, 0),
       duracaoMin: 40,
       agendamentosExistentes: [],
@@ -100,6 +127,8 @@ describe("tentarAgendar", () => {
 
   it("recusa horário além da janela de agendamento (14 dias)", () => {
     const resultado = tentarAgendar({
+      horarioFuncionamento: HORARIO,
+      janelaAgendamentoDias: JANELA,
       inicio: addMinutes(AGORA_REFERENCIA, 60 * 24 * 30), // 30 dias à frente
       duracaoMin: 40,
       agendamentosExistentes: [],
@@ -110,6 +139,8 @@ describe("tentarAgendar", () => {
 
   it("recusa horário em dia fechado", () => {
     const resultado = tentarAgendar({
+      horarioFuncionamento: HORARIO,
+      janelaAgendamentoDias: JANELA,
       inicio: DOMINGO(10, 0),
       duracaoMin: 40,
       agendamentosExistentes: [],
@@ -120,6 +151,8 @@ describe("tentarAgendar", () => {
 
   it("recusa quando o serviço terminaria depois do fechamento", () => {
     const resultado = tentarAgendar({
+      horarioFuncionamento: HORARIO,
+      janelaAgendamentoDias: JANELA,
       inicio: TERCA(18, 50),
       duracaoMin: 40, // terminaria 19h30, depois do fechamento (19h)
       agendamentosExistentes: [],
@@ -131,6 +164,8 @@ describe("tentarAgendar", () => {
   it("recusa quando colide com um agendamento existente", () => {
     const existentes: IntervaloAgendado[] = [{ inicio: TERCA(10, 0), fim: TERCA(10, 40) }];
     const resultado = tentarAgendar({
+      horarioFuncionamento: HORARIO,
+      janelaAgendamentoDias: JANELA,
       inicio: TERCA(10, 20),
       duracaoMin: 30,
       agendamentosExistentes: existentes,
@@ -144,12 +179,12 @@ describe("podeCancelar", () => {
   it("permite cancelar com mais de 2h de antecedência", () => {
     const agora = TERCA(10, 0);
     const agendamento = TERCA(13, 0);
-    expect(podeCancelar(agendamento, agora)).toBe(true);
+    expect(podeCancelar(ANTECEDENCIA, agendamento, agora)).toBe(true);
   });
 
   it("bloqueia cancelamento em cima da hora", () => {
     const agora = TERCA(10, 0);
     const agendamento = TERCA(11, 0);
-    expect(podeCancelar(agendamento, agora)).toBe(false);
+    expect(podeCancelar(ANTECEDENCIA, agendamento, agora)).toBe(false);
   });
 });

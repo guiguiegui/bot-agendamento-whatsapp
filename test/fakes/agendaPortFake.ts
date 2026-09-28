@@ -1,12 +1,11 @@
 import { addDays, startOfDay } from "date-fns";
 import type { AgendaPort, AgendamentoResumo } from "../../src/conversation/ports.js";
 import type { IntervaloAgendado } from "../../src/domain/scheduling.js";
-import type { ServicoId } from "../../src/domain/services.js";
 
 interface AgendamentoInterno {
   id: string;
   telefone: string;
-  servico: ServicoId;
+  servico: string;
   inicio: Date;
   fim: Date;
 }
@@ -27,7 +26,7 @@ export class AgendaPortFake implements AgendaPort {
       .map((a) => ({ inicio: a.inicio, fim: a.fim }));
   }
 
-  async criarAgendamento(input: { telefone: string; servico: ServicoId; inicio: Date; fim: Date }) {
+  async criarAgendamento(input: { telefone: string; servico: string; inicio: Date; fim: Date }) {
     const id = `ag-${++this.contador}`;
     this.agendamentos.push({ id, ...input });
     return { id };
@@ -49,7 +48,7 @@ export class AgendaPortFake implements AgendaPort {
   }
 
   /** Atalho só de teste: injeta um agendamento já existente direto no "banco". */
-  semear(input: { telefone: string; servico: ServicoId; inicio: Date; fim: Date }) {
+  semear(input: { telefone: string; servico: string; inicio: Date; fim: Date }) {
     const id = `ag-${++this.contador}`;
     this.agendamentos.push({ id, ...input });
     return id;

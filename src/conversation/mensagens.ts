@@ -1,30 +1,33 @@
-import { HORARIO_FUNCIONAMENTO } from "../domain/businessHours.js";
+import type { FaixaHorario } from "../domain/businessHours.js";
+import type { ServicoNegocio } from "../domain/negocio.js";
 import type { MotivoRecusa } from "../domain/scheduling.js";
-import { CATALOGO_SERVICOS, type Servico, buscarServico, formatarPreco } from "../domain/services.js";
+import { buscarServico, formatarPreco } from "../domain/services.js";
 import { formatarDataCurta, formatarHora } from "../utils/formato.js";
 import type { AgendamentoResumo } from "./ports.js";
 
-export const MENU_TEXTO = [
-  "Olá! 💈 Aqui é o assistente da *Barba & Ofício*.",
-  "",
-  "1. Agendar horário",
-  "2. Meus agendamentos",
-  "3. Cancelar agendamento",
-  "4. Serviços e preços",
-  "5. Horário de funcionamento",
-  "6. Falar com um atendente",
-  "",
-  "Responda só com o número da opção.",
-].join("\n");
+export function textoMenu(nomeNegocio: string): string {
+  return [
+    `Olá! 💈 Aqui é o assistente da *${nomeNegocio}*.`,
+    "",
+    "1. Agendar horário",
+    "2. Meus agendamentos",
+    "3. Cancelar agendamento",
+    "4. Serviços e preços",
+    "5. Horário de funcionamento",
+    "6. Falar com um atendente",
+    "",
+    "Responda só com o número da opção.",
+  ].join("\n");
+}
 
-export function textoListaServicos(): string {
-  const linhas = CATALOGO_SERVICOS.map(
+export function textoListaServicos(catalogo: ServicoNegocio[]): string {
+  const linhas = catalogo.map(
     (s, i) => `${i + 1}. ${s.nome} — ${formatarPreco(s.precoCentavos)} (${s.duracaoMin} min)`,
   );
   return `Qual serviço você quer agendar?\n\n${linhas.join("\n")}\n\n0. Voltar ao menu`;
 }
 
-export function textoListaHorarios(horarios: Date[], servico: Servico): string {
+export function textoListaHorarios(horarios: Date[], servico: ServicoNegocio): string {
   const linhas = horarios.map((h, i) => `${i + 1}. ${formatarHora(h)}`);
   const primeiro = horarios[0];
   const dataFormatada = primeiro ? formatarDataCurta(primeiro) : "";
@@ -37,16 +40,16 @@ export function textoListaHorarios(horarios: Date[], servico: Servico): string {
   ].join("\n");
 }
 
-export function textoCatalogo(): string {
-  const linhas = CATALOGO_SERVICOS.map((s) => `• ${s.nome} — ${formatarPreco(s.precoCentavos)}`);
+export function textoCatalogo(catalogo: ServicoNegocio[]): string {
+  const linhas = catalogo.map((s) => `• ${s.nome} — ${formatarPreco(s.precoCentavos)}`);
   return `Nossos serviços:\n\n${linhas.join("\n")}`;
 }
 
 const NOMES_DIA = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
-export function textoHorarioFuncionamento(): string {
+export function textoHorarioFuncionamento(horarioFuncionamento: Record<number, FaixaHorario | null>): string {
   const linhas = NOMES_DIA.map((nome, i) => {
-    const faixa = HORARIO_FUNCIONAMENTO[i];
+    const faixa = horarioFuncionamento[i];
     const horario = faixa
       ? `${String(faixa.abreHora).padStart(2, "0")}h às ${String(faixa.fechaHora).padStart(2, "0")}h`
       : "Fechado";
@@ -75,9 +78,9 @@ export function textoMotivoRecusa(motivo: MotivoRecusa): string {
   }
 }
 
-export function textoListaAgendamentos(agendamentos: AgendamentoResumo[]): string {
+export function textoListaAgendamentos(agendamentos: AgendamentoResumo[], catalogo: ServicoNegocio[]): string {
   const linhas = agendamentos.map((a, i) => {
-    const servico = buscarServico(a.servico);
+    const servico = buscarServico(catalogo, a.servico);
     return `${i + 1}. ${servico?.nome ?? a.servico} — ${formatarDataCurta(a.inicio)} às ${formatarHora(a.inicio)}`;
   });
   return `Seus próximos agendamentos:\n\n${linhas.join("\n")}`;

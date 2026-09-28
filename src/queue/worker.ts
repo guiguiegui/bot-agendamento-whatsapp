@@ -1,15 +1,20 @@
 import { Worker } from "bullmq";
-import { config } from "../config.js";
 import { processarComandoAdmin } from "../commands/admin.js";
 import type { AgendaPort, RelatorioPort } from "../conversation/ports.js";
 import { processarMensagem } from "../conversation/router.js";
+import type { Negocio } from "../domain/negocio.js";
 import type { IMessagingClient } from "../whatsapp/types.js";
 import { criarLockPorChave } from "../utils/lockPorChave.js";
 import { logger } from "../utils/logger.js";
 import { NOME_FILA_MENSAGENS, conexaoRedis, type JobMensagemEntrada } from "./queue.js";
 import { SessionStoreRedis } from "./sessionStore.js";
 
-export function iniciarWorker(porta: AgendaPort, relatorios: RelatorioPort, cliente: IMessagingClient): Worker {
+export function iniciarWorker(
+  porta: AgendaPort,
+  relatorios: RelatorioPort,
+  cliente: IMessagingClient,
+  negocio: Negocio,
+): Worker {
   const sessoes = new SessionStoreRedis(conexaoRedis);
   // Evita que duas mensagens seguidas do mesmo cliente (ex: ele manda "1"
   // duas vezes rápido) leiam e regravem o estado da conversa fora de ordem.
@@ -21,8 +26,8 @@ export function iniciarWorker(porta: AgendaPort, relatorios: RelatorioPort, clie
       const { telefone, texto } = job.data;
 
       await comLockDoTelefone(telefone, async () => {
-        if (config.numerosAdmin.includes(telefone) && texto.trim().startsWith("/")) {
-          const respostaAdmin = await processarComandoAdmin(texto, relatorios);
+        if (negocio.numerosAdmin.includes(telefone) && texto.trim().startsWith("/")) {
+          const respostaAdmin = await processarComandoAdmin(texto, relatorios, negocio.catalogoServicos);
           if (respostaAdmin) {
             await cliente.enviarTexto(telefone, respostaAdmin);
             return;
@@ -30,7 +35,7 @@ export function iniciarWorker(porta: AgendaPort, relatorios: RelatorioPort, clie
         }
 
         const contextoAtual = await sessoes.obter(telefone);
-        const resposta = await processarMensagem(texto, contextoAtual, telefone, porta);
+        const resposta = await processarMensagem(texto, contextoAtual, telefone, porta, negocio);
         await sessoes.salvar(telefone, resposta.contexto);
 
         for (const mensagem of resposta.mensagens) {

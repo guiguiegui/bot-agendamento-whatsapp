@@ -1,5 +1,5 @@
 import { addDays, addMinutes, differenceInHours, setHours, setMilliseconds, setMinutes, setSeconds } from "date-fns";
-import { ANTECEDENCIA_MINIMA_CANCELAMENTO_HORAS, JANELA_AGENDAMENTO_DIAS, faixaDoDia } from "./businessHours.js";
+import { type FaixaHorario, faixaDoDia } from "./businessHours.js";
 
 export interface IntervaloAgendado {
   inicio: Date;
@@ -31,8 +31,14 @@ export function intervalosSeSobrepoem(a: IntervaloAgendado, b: IntervaloAgendado
  * respeitando o horário de funcionamento e um passo fixo entre encaixes (padrão 30min).
  * Não considera agendamentos já existentes — isso é feito em `horariosDisponiveis`.
  */
-export function gerarHorariosCandidatos(data: Date, duracaoMin: number, passoMin = 30): Date[] {
-  const faixa = faixaDoDia(data);
+export function gerarHorariosCandidatos(params: {
+  horarioFuncionamento: Record<number, FaixaHorario | null>;
+  data: Date;
+  duracaoMin: number;
+  passoMin?: number;
+}): Date[] {
+  const { horarioFuncionamento, data, duracaoMin, passoMin = 30 } = params;
+  const faixa = faixaDoDia(horarioFuncionamento, data);
   if (!faixa) return [];
 
   const abertura = comHorario(data, faixa.abreHora, faixa.abreMinuto);
@@ -51,14 +57,16 @@ export function gerarHorariosCandidatos(data: Date, duracaoMin: number, passoMin
  * Horários realmente disponíveis num dia: remove os que já passaram (se for hoje)
  * e os que colidem com agendamentos existentes.
  */
-export function horariosDisponiveis(
-  data: Date,
-  duracaoMin: number,
-  agendamentosExistentes: IntervaloAgendado[],
-  agora: Date = new Date(),
-  passoMin = 30,
-): Date[] {
-  return gerarHorariosCandidatos(data, duracaoMin, passoMin).filter((inicio) => {
+export function horariosDisponiveis(params: {
+  horarioFuncionamento: Record<number, FaixaHorario | null>;
+  data: Date;
+  duracaoMin: number;
+  agendamentosExistentes: IntervaloAgendado[];
+  agora?: Date;
+  passoMin?: number;
+}): Date[] {
+  const { horarioFuncionamento, data, duracaoMin, agendamentosExistentes, agora = new Date(), passoMin = 30 } = params;
+  return gerarHorariosCandidatos({ horarioFuncionamento, data, duracaoMin, passoMin }).filter((inicio) => {
     if (inicio < agora) return false;
     const fim = addMinutes(inicio, duracaoMin);
     const candidato: IntervaloAgendado = { inicio, fim };
@@ -71,23 +79,25 @@ export function horariosDisponiveis(
  * Não toca em banco de dados — a camada de persistência decide o que fazer com o resultado.
  */
 export function tentarAgendar(params: {
+  horarioFuncionamento: Record<number, FaixaHorario | null>;
+  janelaAgendamentoDias: number;
   inicio: Date;
   duracaoMin: number;
   agendamentosExistentes: IntervaloAgendado[];
   agora?: Date;
 }): ResultadoAgendamento {
   const agora = params.agora ?? new Date();
-  const { inicio, duracaoMin, agendamentosExistentes } = params;
+  const { horarioFuncionamento, janelaAgendamentoDias, inicio, duracaoMin, agendamentosExistentes } = params;
   const fim = addMinutes(inicio, duracaoMin);
 
   if (inicio < agora) {
     return { ok: false, motivo: "no_passado" };
   }
-  if (inicio > addDays(agora, JANELA_AGENDAMENTO_DIAS)) {
+  if (inicio > addDays(agora, janelaAgendamentoDias)) {
     return { ok: false, motivo: "fora_da_janela" };
   }
 
-  const faixa = faixaDoDia(inicio);
+  const faixa = faixaDoDia(horarioFuncionamento, inicio);
   if (!faixa) {
     return { ok: false, motivo: "fora_do_horario" };
   }
@@ -107,6 +117,6 @@ export function tentarAgendar(params: {
 }
 
 /** Regra de cancelamento: precisa de antecedência mínima configurada. */
-export function podeCancelar(inicioAgendamento: Date, agora: Date = new Date()): boolean {
-  return differenceInHours(inicioAgendamento, agora) >= ANTECEDENCIA_MINIMA_CANCELAMENTO_HORAS;
+export function podeCancelar(antecedenciaMinimaHoras: number, inicioAgendamento: Date, agora: Date = new Date()): boolean {
+  return differenceInHours(inicioAgendamento, agora) >= antecedenciaMinimaHoras;
 }
