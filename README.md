@@ -52,6 +52,7 @@ Resumo rápido — o raciocínio completo de cada uma está nos [ADRs](docs/adr/
 - **Redis + BullMQ pra fila e sessão** ([ADR 3](docs/adr/0003-fila-assincrona-bullmq-redis.md)): é a peça que realmente precisa ser compartilhada se um dia rodar mais de uma instância do bot, e já vem pronta pra isso.
 - **Máquina de estados explícita, não regex solto** ([ADR 2](docs/adr/0002-maquina-de-estados-explicita.md)): cada conversa tem um estado bem definido (`MENU`, `AGENDAR_DATA`, etc.), então "o que esse número '1' significa" nunca é ambíguo — depende só do estado atual, testado isoladamente.
 - **Casos de uso separados da máquina de estados** ([ADR 7](docs/adr/0007-camada-de-casos-de-uso.md)): `router.ts` decide só estado; a regra de negócio (horário pode ser confirmado? cancelamento é aceito?) mora em `src/application/`, testável sem precisar simular texto de conversa.
+- **Textos de conversa centralizados, prontos pra tradução** ([ADR 8](docs/adr/0008-textos-i18n-ready.md)): todo texto que o bot manda pro cliente mora em `src/i18n/pt-BR.ts`, não espalhado em `router.ts`. Hoje só existe português — o público-alvo é negócio brasileiro — mas adicionar um idioma novo não vai exigir tocar na máquina de estados nem nos casos de uso.
 
 ### Sobre a biblioteca do WhatsApp ([ADR 5](docs/adr/0005-baileys-nao-oficial.md))
 
@@ -124,7 +125,8 @@ Nenhum desses passos toca na máquina de estados, na fila ou no código — é s
 src/
   domain/         regras de negócio puras (agendamento, catálogo, horários, negócio) — sem I/O
   application/     casos de uso — orquestram domain/ + AgendaPort (confirmar, cancelar, listar)
-  conversation/    máquina de estados da conversa + textos + porta (interface) pro banco
+  conversation/    máquina de estados da conversa + porta (interface) pro banco
+  i18n/            textos de conversa, um arquivo por idioma (hoje só pt-BR.ts)
   db/              SQLite: migrações, conexão, repositórios que implementam as portas
   queue/           fila (BullMQ), worker (dispatch por negócio), sessão da conversa no Redis
   whatsapp/        adaptador Baileys + interface de mensageria (uma instância por negócio)
