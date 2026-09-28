@@ -6,7 +6,6 @@ import makeWASocket, {
   type WASocket,
 } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
-import { config } from "../config.js";
 import { filaMensagens } from "../queue/queue.js";
 import { logger } from "../utils/logger.js";
 import type { IMessagingClient } from "./types.js";
@@ -27,9 +26,18 @@ function jidParaTelefone(jid: string): string {
  *
  * Responsabilidade única: manter a conexão viva e transformar mensagens
  * recebidas em jobs na fila. Toda a lógica de conversa mora em outro lugar.
+ *
+ * Uma instância = uma conexão = um negócio (`negocioId`), cada um com sua
+ * própria pasta de sessão (`authDir`) — é isso que permite vários negócios
+ * rodando na mesma instância do bot, cada um com seu próprio WhatsApp.
  */
 export class BaileysMessagingClient implements IMessagingClient {
   private socket: WASocket | undefined;
+
+  constructor(
+    private readonly negocioId: string,
+    private readonly authDir: string,
+  ) {}
 
   async enviarTexto(telefone: string, texto: string): Promise<void> {
     if (!this.socket) {
@@ -39,13 +47,13 @@ export class BaileysMessagingClient implements IMessagingClient {
   }
 
   async conectar(): Promise<void> {
-    const { state, saveCreds } = await useMultiFileAuthState(config.whatsappAuthDir);
+    const { state, saveCreds } = await useMultiFileAuthState(this.authDir);
     const { version } = await fetchLatestBaileysVersion();
 
     const socket = makeWASocket({
       version,
       auth: state,
-      logger: logger.child({ modulo: "baileys" }),
+      logger: logger.child({ modulo: "baileys", negocioId: this.negocioId }),
     });
     this.socket = socket;
 
@@ -66,23 +74,27 @@ export class BaileysMessagingClient implements IMessagingClient {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      logger.info("Escaneie o QR code abaixo, no WhatsApp do número do negócio (Aparelhos conectados):");
+      logger.info(
+        { negocioId: this.negocioId },
+        "Escaneie o QR code abaixo, no WhatsApp do número deste negócio (Aparelhos conectados):",
+      );
       qrcode.generate(qr, { small: true });
     }
 
     if (connection === "close") {
       const statusCode = (lastDisconnect?.error as Boom | undefined)?.output?.statusCode;
       const deveReconectar = statusCode !== DisconnectReason.loggedOut;
-      logger.warn({ statusCode, deveReconectar }, "Conexão com o WhatsApp caiu");
+      logger.warn({ negocioId: this.negocioId, statusCode, deveReconectar }, "Conexão com o WhatsApp caiu");
       if (deveReconectar) {
         void this.conectar();
       } else {
         logger.error(
-          "Sessão desconectada (logout no aparelho). Apague a pasta de auth configurada em WHATSAPP_AUTH_DIR e escaneie o QR de novo.",
+          { negocioId: this.negocioId },
+          "Sessão desconectada (logout no aparelho). Apague a pasta de auth desse negócio e escaneie o QR de novo.",
         );
       }
     } else if (connection === "open") {
-      logger.info("Conectado ao WhatsApp ✅");
+      logger.info({ negocioId: this.negocioId }, "Conectado ao WhatsApp ✅");
     }
   }
 
@@ -114,10 +126,17 @@ export class BaileysMessagingClient implements IMessagingClient {
 
       await filaMensagens.add(
         "mensagem-recebida",
-        { telefone: jidParaTelefone(jid), texto, recebidoEm: new Date().toISOString() },
-        // usar o id da mensagem do WhatsApp como jobId evita processar a
-        // mesma mensagem duas vezes se a Baileys entregar o evento repetido.
-        { jobId: msg.key.id ?? undefined },
+        {
+          negocioId: this.negocioId,
+          telefone: jidParaTelefone(jid),
+          texto,
+          recebidoEm: new Date().toISOString(),
+        },
+        // usar o id da mensagem do WhatsApp (prefixado pelo negócio) como
+        // jobId evita processar a mesma mensagem duas vezes se a Baileys
+        // entregar o evento repetido — e evita colisão entre negócios
+        // diferentes no caso (raro) de ids de mensagem iguais.
+        { jobId: msg.key.id ? `${this.negocioId}:${msg.key.id}` : undefined },
       );
     }
   }

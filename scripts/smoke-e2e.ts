@@ -11,7 +11,7 @@ import { AgendaRepositorySqlite } from "../src/db/agendaRepository.js";
 import { abrirBanco } from "../src/db/database.js";
 import { NegocioRepository } from "../src/db/negocioRepository.js";
 import { conexaoRedis, filaMensagens } from "../src/queue/queue.js";
-import { iniciarWorker } from "../src/queue/worker.js";
+import { iniciarWorker, type RegistroNegocio } from "../src/queue/worker.js";
 import type { IMessagingClient } from "../src/whatsapp/types.js";
 
 const TELEFONE = "5519990000000";
@@ -23,8 +23,13 @@ class ClienteFalso implements IMessagingClient {
   }
 }
 
-async function enviar(texto: string): Promise<void> {
-  await filaMensagens.add("mensagem-recebida", { telefone: TELEFONE, texto, recebidoEm: new Date().toISOString() });
+async function enviar(negocioId: string, texto: string): Promise<void> {
+  await filaMensagens.add("mensagem-recebida", {
+    negocioId,
+    telefone: TELEFONE,
+    texto,
+    recebidoEm: new Date().toISOString(),
+  });
 }
 
 /** Acha a próxima terça-feira a partir de hoje (dia de funcionamento garantido) e formata dd/mm. */
@@ -38,16 +43,19 @@ function proximaTercaFormatada(): string {
 
 async function main() {
   const db = abrirBanco(":memory:");
-  const repo = new AgendaRepositorySqlite(db);
   const negocio = new NegocioRepository(db).listarAtivos()[0];
   if (!negocio) throw new Error("Nenhum negócio ativo seedado — smoke test não pode continuar.");
+  const repo = new AgendaRepositorySqlite(db, negocio.id);
   const cliente = new ClienteFalso();
-  const worker = iniciarWorker(repo, repo, cliente, negocio);
+  const registros = new Map<string, RegistroNegocio>([
+    [negocio.id, { negocio, porta: repo, relatorios: repo, cliente }],
+  ]);
+  const worker = iniciarWorker(registros);
 
   // agendar -> corte -> próxima terça (dia útil garantido) -> primeiro horário
   const passos = ["1", "1", proximaTercaFormatada(), "1"];
   for (const passo of passos) {
-    await enviar(passo);
+    await enviar(negocio.id, passo);
     await esperar(300); // dá tempo do worker processar antes do próximo passo
   }
 

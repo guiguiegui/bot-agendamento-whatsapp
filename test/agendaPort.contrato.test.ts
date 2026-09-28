@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { AgendaPort } from "../src/conversation/ports.js";
 import { AgendaRepositorySqlite } from "../src/db/agendaRepository.js";
 import { abrirBanco } from "../src/db/database.js";
+import { ID_NEGOCIO_SEED } from "../src/db/migrations/0002_negocios_multi_tenant.js";
 import { AgendaPortFake } from "./fakes/agendaPortFake.js";
 
 /**
@@ -117,4 +118,4 @@ function testarContratoDoAgendaPort(nome: string, criarPorta: () => AgendaPort):
 }
 
 testarContratoDoAgendaPort("fake em memória", () => new AgendaPortFake());
-testarContratoDoAgendaPort("SQLite real", () => new AgendaRepositorySqlite(abrirBanco(":memory:")));
+testarContratoDoAgendaPort("SQLite real", () => new AgendaRepositorySqlite(abrirBanco(":memory:"), ID_NEGOCIO_SEED));
