@@ -2,7 +2,7 @@ import { config } from "./config.js";
 import { AgendaRepositorySqlite } from "./db/agendaRepository.js";
 import { abrirBanco } from "./db/database.js";
 import { NegocioRepository } from "./db/negocioRepository.js";
-import { iniciarWorker } from "./queue/worker.js";
+import { iniciarWorker, type RegistroNegocio } from "./queue/worker.js";
 import { logger } from "./utils/logger.js";
 import { BaileysMessagingClient } from "./whatsapp/client.js";
 
@@ -22,21 +22,29 @@ process.on("uncaughtException", (erro) => {
 
 async function main(): Promise<void> {
   const db = abrirBanco(config.databasePath);
-  const repositorio = new AgendaRepositorySqlite(db);
 
-  // Enquanto o bot só atende um negócio por instância (multi-conexão é uma
-  // evolução futura), usamos o primeiro negócio ativo cadastrado.
-  const negocio = new NegocioRepository(db).listarAtivos()[0];
-  if (!negocio) {
+  const negocios = new NegocioRepository(db).listarAtivos();
+  if (negocios.length === 0) {
     throw new Error("Nenhum negócio ativo cadastrado — rode as migrações (npm run db:migrate) ou verifique o banco.");
   }
 
-  const clienteWhatsapp = new BaileysMessagingClient();
-  const worker = iniciarWorker(repositorio, repositorio, clienteWhatsapp, negocio);
+  // Uma conexão Baileys por negócio ativo — cada uma com sua própria pasta
+  // de sessão, compartilhando o mesmo worker e a mesma fila (ver
+  // queue/worker.ts).
+  const registros = new Map<string, RegistroNegocio>();
+  const clientesWhatsapp: BaileysMessagingClient[] = [];
+  for (const negocio of negocios) {
+    const porta = new AgendaRepositorySqlite(db, negocio.id);
+    const cliente = new BaileysMessagingClient(negocio.id, negocio.whatsappAuthDir);
+    registros.set(negocio.id, { negocio, porta, relatorios: porta, cliente });
+    clientesWhatsapp.push(cliente);
+  }
 
-  await clienteWhatsapp.conectar();
+  const worker = iniciarWorker(registros);
 
-  logger.info("Bot de agendamento no ar. Aguardando mensagens...");
+  await Promise.all(clientesWhatsapp.map((cliente) => cliente.conectar()));
+
+  logger.info({ negocios: negocios.length }, "Bot de agendamento no ar. Aguardando mensagens...");
 
   const encerrar = async (sinal: string) => {
     logger.info({ sinal }, "Encerrando...");

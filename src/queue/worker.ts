@@ -9,23 +9,39 @@ import { logger } from "../utils/logger.js";
 import { NOME_FILA_MENSAGENS, conexaoRedis, type JobMensagemEntrada } from "./queue.js";
 import { SessionStoreRedis } from "./sessionStore.js";
 
-export function iniciarWorker(
-  porta: AgendaPort,
-  relatorios: RelatorioPort,
-  cliente: IMessagingClient,
-  negocio: Negocio,
-): Worker {
+export interface RegistroNegocio {
+  negocio: Negocio;
+  porta: AgendaPort;
+  relatorios: RelatorioPort;
+  cliente: IMessagingClient;
+}
+
+/**
+ * Worker único, compartilhado entre todos os negócios ativos — cada job da
+ * fila já vem marcado com `negocioId` (ver whatsapp/client.ts), e o
+ * processor resolve o registro certo (porta, mensageria, config) antes de
+ * processar. Mais simples de operar do que uma fila/worker por negócio, e
+ * suficiente na escala que esse bot atende.
+ */
+export function iniciarWorker(registros: Map<string, RegistroNegocio>): Worker {
   const sessoes = new SessionStoreRedis(conexaoRedis);
-  // Evita que duas mensagens seguidas do mesmo cliente (ex: ele manda "1"
-  // duas vezes rápido) leiam e regravem o estado da conversa fora de ordem.
+  // Evita que duas mensagens seguidas do mesmo cliente, do mesmo negócio,
+  // (ex: ele manda "1" duas vezes rápido) leiam e regravem o estado da
+  // conversa fora de ordem.
   const { comLock: comLockDoTelefone } = criarLockPorChave();
 
   const worker = new Worker<JobMensagemEntrada>(
     NOME_FILA_MENSAGENS,
     async (job) => {
-      const { telefone, texto } = job.data;
+      const { negocioId, telefone, texto } = job.data;
+      const registro = registros.get(negocioId);
+      if (!registro) {
+        logger.error({ negocioId, telefone }, "Job de um negócio desconhecido ou inativo — descartando");
+        return;
+      }
+      const { negocio, porta, relatorios, cliente } = registro;
 
-      await comLockDoTelefone(telefone, async () => {
+      await comLockDoTelefone(`${negocioId}:${telefone}`, async () => {
         if (negocio.numerosAdmin.includes(telefone) && texto.trim().startsWith("/")) {
           const respostaAdmin = await processarComandoAdmin(texto, relatorios, negocio.catalogoServicos);
           if (respostaAdmin) {
@@ -34,9 +50,9 @@ export function iniciarWorker(
           }
         }
 
-        const contextoAtual = await sessoes.obter(telefone);
+        const contextoAtual = await sessoes.obter(negocioId, telefone);
         const resposta = await processarMensagem(texto, contextoAtual, telefone, porta, negocio);
-        await sessoes.salvar(telefone, resposta.contexto);
+        await sessoes.salvar(negocioId, telefone, resposta.contexto);
 
         for (const mensagem of resposta.mensagens) {
           await cliente.enviarTexto(telefone, mensagem);
@@ -47,7 +63,10 @@ export function iniciarWorker(
   );
 
   worker.on("failed", (job, erro) => {
-    logger.error({ erro, jobId: job?.id, telefone: job?.data.telefone }, "Falha ao processar mensagem da fila");
+    logger.error(
+      { erro, jobId: job?.id, negocioId: job?.data.negocioId, telefone: job?.data.telefone },
+      "Falha ao processar mensagem da fila",
+    );
   });
 
   return worker;

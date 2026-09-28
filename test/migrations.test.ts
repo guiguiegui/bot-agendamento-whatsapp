@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { abrirBanco } from "../src/db/database.js";
 import { migracao0001EsquemaInicial } from "../src/db/migrations/0001_esquema_inicial.js";
 import { ID_NEGOCIO_SEED, migracao0002NegociosMultiTenant } from "../src/db/migrations/0002_negocios_multi_tenant.js";
+import { migracao0003ClientesUnicoPorNegocio } from "../src/db/migrations/0003_clientes_unico_por_negocio.js";
 import { MIGRACOES } from "../src/db/migrations/index.js";
 import { aplicarMigracoes } from "../src/db/migrationRunner.js";
 
@@ -65,22 +66,79 @@ describe("migrações", () => {
     expect(agendamento.negocio_id).toBe(ID_NEGOCIO_SEED);
   });
 
-  it("agendaRepository continua funcionando normalmente depois da migração (sem quebrar o constraint de clientes)", () => {
+  it("agendaRepository continua funcionando normalmente depois da migração (ON CONFLICT(negocio_id, telefone))", () => {
     const db = abrirBanco(":memory:");
-    // simula o garantirCliente do AgendaRepositorySqlite: ON CONFLICT(telefone) só é
-    // válido enquanto a constraint UNIQUE(telefone) sozinha continuar existindo.
+    // simula o garantirCliente do AgendaRepositorySqlite pós-0003.
     expect(() => {
-      db.prepare("INSERT INTO clientes (id, telefone) VALUES (?, ?) ON CONFLICT(telefone) DO NOTHING").run(
-        "cli-1",
-        "5519999999999",
-      );
-      db.prepare("INSERT INTO clientes (id, telefone) VALUES (?, ?) ON CONFLICT(telefone) DO NOTHING").run(
-        "cli-2",
-        "5519999999999",
-      );
+      db.prepare(
+        "INSERT INTO clientes (id, negocio_id, telefone) VALUES (?, ?, ?) ON CONFLICT(negocio_id, telefone) DO NOTHING",
+      ).run("cli-1", ID_NEGOCIO_SEED, "5519999999999");
+      db.prepare(
+        "INSERT INTO clientes (id, negocio_id, telefone) VALUES (?, ?, ?) ON CONFLICT(negocio_id, telefone) DO NOTHING",
+      ).run("cli-2", ID_NEGOCIO_SEED, "5519999999999");
     }).not.toThrow();
 
     const total = db.prepare("SELECT COUNT(*) AS n FROM clientes").get() as { n: number };
     expect(total.n).toBe(1);
+  });
+
+  it("0003 permite o mesmo telefone em negócios diferentes", () => {
+    const db = new Database(":memory:");
+    aplicarMigracoes(db, MIGRACOES);
+
+    db.prepare(
+      "INSERT INTO negocios (id, nome, whatsapp_auth_dir, catalogo_servicos, horario_funcionamento) VALUES (?, ?, ?, ?, ?)",
+    ).run("outro-negocio", "Outro", "./data/auth-outro", "[]", "{}");
+
+    expect(() => {
+      db.prepare("INSERT INTO clientes (id, negocio_id, telefone) VALUES (?, ?, ?)").run(
+        "cli-1",
+        ID_NEGOCIO_SEED,
+        "5519999999999",
+      );
+      db.prepare("INSERT INTO clientes (id, negocio_id, telefone) VALUES (?, ?, ?)").run(
+        "cli-2",
+        "outro-negocio",
+        "5519999999999",
+      );
+    }).not.toThrow();
+  });
+
+  it("0003 continua bloqueando o mesmo telefone duplicado dentro do mesmo negócio", () => {
+    const db = new Database(":memory:");
+    aplicarMigracoes(db, MIGRACOES);
+
+    db.prepare("INSERT INTO clientes (id, negocio_id, telefone) VALUES (?, ?, ?)").run(
+      "cli-1",
+      ID_NEGOCIO_SEED,
+      "5519999999999",
+    );
+    expect(() =>
+      db
+        .prepare("INSERT INTO clientes (id, negocio_id, telefone) VALUES (?, ?, ?)")
+        .run("cli-2", ID_NEGOCIO_SEED, "5519999999999"),
+    ).toThrow(/UNIQUE constraint failed/);
+  });
+
+  it("0003 preserva os dados existentes de clientes/agendamentos ao recriar as tabelas", () => {
+    const db = new Database(":memory:");
+    aplicarMigracoes(db, [migracao0001EsquemaInicial, migracao0002NegociosMultiTenant]);
+
+    db.prepare("INSERT INTO clientes (id, negocio_id, telefone, nome) VALUES (?, ?, ?, ?)").run(
+      "cli-1",
+      ID_NEGOCIO_SEED,
+      "5519999999999",
+      "Fulano",
+    );
+    db.prepare(
+      "INSERT INTO agendamentos (id, negocio_id, telefone, servico, inicio, fim) VALUES (?, ?, ?, ?, ?, ?)",
+    ).run("ag-1", ID_NEGOCIO_SEED, "5519999999999", "corte", "2026-09-29T10:00:00.000Z", "2026-09-29T10:40:00.000Z");
+
+    aplicarMigracoes(db, [migracao0003ClientesUnicoPorNegocio]);
+
+    const cliente = db.prepare("SELECT * FROM clientes WHERE id = ?").get("cli-1") as { nome: string };
+    const agendamento = db.prepare("SELECT * FROM agendamentos WHERE id = ?").get("ag-1") as { servico: string };
+    expect(cliente.nome).toBe("Fulano");
+    expect(agendamento.servico).toBe("corte");
   });
 });

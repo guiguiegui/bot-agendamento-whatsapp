@@ -26,23 +26,34 @@ function inicioEFimDoDia(data: Date): { inicioDia: Date; fimDia: Date } {
   return { inicioDia, fimDia };
 }
 
-/** Implementação real do `AgendaPort` (+ `RelatorioPort` pro admin), sobre SQLite. */
+/**
+ * Implementação real do `AgendaPort` (+ `RelatorioPort` pro admin), sobre
+ * SQLite. Escopada por `negocioId`: cada instância só vê e só escreve dados
+ * do negócio com que foi construída — toda query filtra por `negocio_id`.
+ * Vários negócios compartilham o mesmo arquivo/conexão SQLite, isolados só
+ * logicamente (pela coluna), não em arquivos separados.
+ */
 export class AgendaRepositorySqlite implements AgendaPort, RelatorioPort {
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly negocioId: string,
+  ) {}
 
   private garantirCliente(telefone: string): void {
     this.db
-      .prepare("INSERT INTO clientes (id, telefone) VALUES (?, ?) ON CONFLICT(telefone) DO NOTHING")
-      .run(randomUUID(), telefone);
+      .prepare(
+        "INSERT INTO clientes (id, negocio_id, telefone) VALUES (?, ?, ?) ON CONFLICT(negocio_id, telefone) DO NOTHING",
+      )
+      .run(randomUUID(), this.negocioId, telefone);
   }
 
   async listarAgendamentosDoDia(data: Date): Promise<IntervaloAgendado[]> {
     const { inicioDia, fimDia } = inicioEFimDoDia(data);
     const linhas = this.db
       .prepare(
-        "SELECT inicio, fim FROM agendamentos WHERE status = 'confirmado' AND inicio >= ? AND inicio < ?",
+        "SELECT inicio, fim FROM agendamentos WHERE negocio_id = ? AND status = 'confirmado' AND inicio >= ? AND inicio < ?",
       )
-      .all(inicioDia.toISOString(), fimDia.toISOString()) as LinhaIntervalo[];
+      .all(this.negocioId, inicioDia.toISOString(), fimDia.toISOString()) as LinhaIntervalo[];
     return linhas.map((l) => ({ inicio: new Date(l.inicio), fim: new Date(l.fim) }));
   }
 
@@ -56,40 +67,42 @@ export class AgendaRepositorySqlite implements AgendaPort, RelatorioPort {
     const id = randomUUID();
     this.db
       .prepare(
-        "INSERT INTO agendamentos (id, telefone, servico, inicio, fim) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO agendamentos (id, negocio_id, telefone, servico, inicio, fim) VALUES (?, ?, ?, ?, ?, ?)",
       )
-      .run(id, input.telefone, input.servico, input.inicio.toISOString(), input.fim.toISOString());
+      .run(id, this.negocioId, input.telefone, input.servico, input.inicio.toISOString(), input.fim.toISOString());
     return { id };
   }
 
   async listarAgendamentosFuturosDoCliente(telefone: string, agora: Date): Promise<AgendamentoResumo[]> {
     const linhas = this.db
       .prepare(
-        "SELECT id, servico, inicio FROM agendamentos WHERE telefone = ? AND status = 'confirmado' AND inicio >= ? ORDER BY inicio ASC",
+        "SELECT id, servico, inicio FROM agendamentos WHERE negocio_id = ? AND telefone = ? AND status = 'confirmado' AND inicio >= ? ORDER BY inicio ASC",
       )
-      .all(telefone, agora.toISOString()) as LinhaResumo[];
+      .all(this.negocioId, telefone, agora.toISOString()) as LinhaResumo[];
     return linhas.map((l) => ({ id: l.id, servico: l.servico, inicio: new Date(l.inicio) }));
   }
 
   async buscarAgendamentoPorId(id: string): Promise<AgendamentoResumo | null> {
     const linha = this.db
-      .prepare("SELECT id, servico, inicio FROM agendamentos WHERE id = ? AND status = 'confirmado'")
-      .get(id) as LinhaResumo | undefined;
+      .prepare("SELECT id, servico, inicio FROM agendamentos WHERE negocio_id = ? AND id = ? AND status = 'confirmado'")
+      .get(this.negocioId, id) as LinhaResumo | undefined;
     return linha ? { id: linha.id, servico: linha.servico, inicio: new Date(linha.inicio) } : null;
   }
 
   async cancelarAgendamento(id: string): Promise<void> {
-    this.db.prepare("UPDATE agendamentos SET status = 'cancelado' WHERE id = ?").run(id);
+    this.db
+      .prepare("UPDATE agendamentos SET status = 'cancelado' WHERE negocio_id = ? AND id = ?")
+      .run(this.negocioId, id);
   }
 
-  /** Usado só pelo comando de admin: todos os agendamentos de um dia, de todos os clientes. */
+  /** Usado só pelo comando de admin: todos os agendamentos de um dia, de todos os clientes do negócio. */
   async listarResumoDoDia(data: Date): Promise<AgendamentoDoDia[]> {
     const { inicioDia, fimDia } = inicioEFimDoDia(data);
     const linhas = this.db
       .prepare(
-        "SELECT telefone, servico, inicio FROM agendamentos WHERE status = 'confirmado' AND inicio >= ? AND inicio < ? ORDER BY inicio ASC",
+        "SELECT telefone, servico, inicio FROM agendamentos WHERE negocio_id = ? AND status = 'confirmado' AND inicio >= ? AND inicio < ? ORDER BY inicio ASC",
       )
-      .all(inicioDia.toISOString(), fimDia.toISOString()) as LinhaResumoComTelefone[];
+      .all(this.negocioId, inicioDia.toISOString(), fimDia.toISOString()) as LinhaResumoComTelefone[];
     return linhas.map((l) => ({ telefone: l.telefone, servico: l.servico, inicio: new Date(l.inicio) }));
   }
 }

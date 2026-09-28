@@ -8,6 +8,7 @@ export const conexaoRedis = new Redis(config.redisUrl, { maxRetriesPerRequest: n
 export const NOME_FILA_MENSAGENS = "whatsapp-mensagens";
 
 export interface JobMensagemEntrada {
+  negocioId: string;
   telefone: string;
   texto: string;
   recebidoEm: string;
