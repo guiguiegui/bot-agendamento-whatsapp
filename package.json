@@ -16,7 +16,8 @@
     "test:watch": "vitest",
     "lint": "eslint src test scripts",
     "db:migrate": "tsx src/db/migrate.ts",
-    "smoke": "tsx scripts/smoke-e2e.ts"
+    "smoke": "tsx scripts/smoke-e2e.ts",
+    "negocio": "tsx scripts/negocio-cli.ts"
   },
   "dependencies": {
     "@hapi/boom": "^10.0.1",
