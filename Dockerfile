@@ -18,6 +18,10 @@ RUN npm prune --omit=dev
 FROM node:22-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
+# Regras de horário de funcionamento (src/domain) usam Date local — fixar o
+# fuso aqui evita que um host com outro TZ (comum em VPS/cloud) desloque o
+# expediente inteiro.
+ENV TZ=America/Sao_Paulo
 
 COPY package.json package-lock.json* ./
 COPY --from=build /app/node_modules ./node_modules

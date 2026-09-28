@@ -1,5 +1,6 @@
 import type { Redis } from "ioredis";
-import { CONTEXTO_INICIAL, type SessaoContexto } from "../conversation/states.js";
+import { CONTEXTO_INICIAL, pareceSessaoValida, type SessaoContexto } from "../conversation/states.js";
+import { logger } from "../utils/logger.js";
 
 const PREFIXO_CHAVE = "sessao:";
 // Depois de 6h sem mensagens, a conversa "esquece" o estado e volta pro menu
@@ -17,11 +18,21 @@ export class SessionStoreRedis {
   async obter(telefone: string): Promise<SessaoContexto> {
     const bruto = await this.redis.get(PREFIXO_CHAVE + telefone);
     if (!bruto) return CONTEXTO_INICIAL;
+
+    let valor: unknown;
     try {
-      return JSON.parse(bruto) as SessaoContexto;
-    } catch {
+      valor = JSON.parse(bruto);
+    } catch (erro) {
+      logger.warn({ erro, telefone }, "Sessão salva no Redis não é um JSON válido — reiniciando pro menu");
       return CONTEXTO_INICIAL;
     }
+
+    if (!pareceSessaoValida(valor)) {
+      logger.warn({ telefone }, "Sessão salva no Redis não tem o formato esperado — reiniciando pro menu");
+      return CONTEXTO_INICIAL;
+    }
+
+    return valor;
   }
 
   async salvar(telefone: string, contexto: SessaoContexto): Promise<void> {

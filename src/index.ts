@@ -5,6 +5,20 @@ import { iniciarWorker } from "./queue/worker.js";
 import { logger } from "./utils/logger.js";
 import { BaileysMessagingClient } from "./whatsapp/client.js";
 
+// Rede de segurança pra qualquer promise "solta" sem .catch (ex: os `void
+// algo()` na Baileys) que rejeitar sem que nada trate: sem isso, o Node
+// derruba o processo sem log nenhum, e o motivo real da queda se perde. O
+// container reinicia sozinho (`restart: unless-stopped`), então continuamos
+// deixando o processo morrer — só garantindo que o porquê fica registrado.
+process.on("unhandledRejection", (erro) => {
+  logger.error({ erro }, "Promise rejeitada sem tratamento — encerrando");
+  process.exit(1);
+});
+process.on("uncaughtException", (erro) => {
+  logger.error({ erro }, "Exceção não capturada — encerrando");
+  process.exit(1);
+});
+
 async function main(): Promise<void> {
   const db = abrirBanco(config.databasePath);
   const repositorio = new AgendaRepositorySqlite(db);

@@ -1,4 +1,5 @@
 import { HORARIO_FUNCIONAMENTO } from "../domain/businessHours.js";
+import type { MotivoRecusa } from "../domain/scheduling.js";
 import { CATALOGO_SERVICOS, type Servico, buscarServico, formatarPreco } from "../domain/services.js";
 import { formatarDataCurta, formatarHora } from "../utils/formato.js";
 import type { AgendamentoResumo } from "./ports.js";
@@ -52,6 +53,26 @@ export function textoHorarioFuncionamento(): string {
     return `${nome}: ${horario}`;
   });
   return `Horário de funcionamento:\n\n${linhas.join("\n")}`;
+}
+
+/** Mensagem específica pra cada motivo de recusa de `tentarAgendar` — ver domain/scheduling.ts. */
+export function textoMotivoRecusa(motivo: MotivoRecusa): string {
+  switch (motivo) {
+    case "no_passado":
+      return "Esse horário já passou.";
+    case "fora_da_janela":
+      return "Esse horário está fora do período em que aceitamos agendamento.";
+    case "fora_do_horario":
+      return "Esse horário está fora do nosso expediente.";
+    case "conflito_de_horario":
+      return "Esse horário acabou de ser ocupado.";
+    default: {
+      // Checagem de exaustividade: se um motivo novo for adicionado em
+      // domain/scheduling.ts e esquecerem de tratar aqui, isso não compila.
+      const _exaustivo: never = motivo;
+      throw new Error(`Motivo de recusa não tratado: ${String(_exaustivo)}`);
+    }
+  }
 }
 
 export function textoListaAgendamentos(agendamentos: AgendamentoResumo[]): string {

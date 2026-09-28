@@ -10,6 +10,7 @@ import {
   textoListaAgendamentos,
   textoListaHorarios,
   textoListaServicos,
+  textoMotivoRecusa,
 } from "./mensagens.js";
 import type { AgendaPort } from "./ports.js";
 import { CONTEXTO_INICIAL, EstadoConversa, type SessaoContexto } from "./states.js";
@@ -193,11 +194,12 @@ async function tratarEscolhaHorario(
   const resultado = tentarAgendar({ inicio, duracaoMin: servico.duracaoMin, agendamentosExistentes: existentesAgora, agora });
 
   if (!resultado.ok) {
+    const motivo = textoMotivoRecusa(resultado.motivo);
     const livres = horariosDisponiveis(inicio, servico.duracaoMin, existentesAgora, agora);
     if (livres.length === 0) {
       return {
         contexto: { estado: EstadoConversa.AGENDAR_DATA, servicoSelecionado: servico.id },
-        mensagens: ["Esse horário acabou de ser ocupado e não sobrou outro livre nesse dia 😕 Tente outra data."],
+        mensagens: [`${motivo} E não sobrou outro horário livre nesse dia 😕 Tente outra data.`],
       };
     }
     return {
@@ -206,7 +208,7 @@ async function tratarEscolhaHorario(
         servicoSelecionado: servico.id,
         horariosOferecidos: livres.map((h) => h.toISOString()),
       },
-      mensagens: [`Esse horário acabou de ser ocupado. Horários atualizados:\n\n${textoListaHorarios(livres, servico)}`],
+      mensagens: [`${motivo} Horários atualizados:\n\n${textoListaHorarios(livres, servico)}`],
     };
   }
 
