@@ -1,5 +1,7 @@
 # Bot de Agendamento via WhatsApp — Barba & Ofício
 
+[![CI](https://github.com/guiguiegui/bot-agendamento-whatsapp/actions/workflows/ci.yml/badge.svg)](https://github.com/guiguiegui/bot-agendamento-whatsapp/actions/workflows/ci.yml)
+
 Bot de atendimento e agendamento por WhatsApp para pequenos negócios (barbearias, salões, clínicas). Projeto de portfólio — mesmo cliente fictício da [landing page](../barbearia.html), pra mostrar o pacote completo: site + automação de atendimento.
 
 Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, 29 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
