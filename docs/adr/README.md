@@ -13,3 +13,4 @@ Uma ADR não é atualizada depois de aceita — se uma decisão muda, cria-se um
 | [0005](0005-baileys-nao-oficial.md) | Baileys (WhatsApp Web não-oficial) em vez da API oficial da Meta | Aceita |
 | [0006](0006-multi-tenant-compartilhado.md) | Multi-tenant numa instância só, fila/worker compartilhados | Aceita |
 | [0007](0007-camada-de-casos-de-uso.md) | Camada de casos de uso separada da máquina de estados | Aceita |
+| [0008](0008-textos-i18n-ready.md) | Textos de conversa centralizados, prontos pra tradução | Aceita |

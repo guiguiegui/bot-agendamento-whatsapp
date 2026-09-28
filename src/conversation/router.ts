@@ -5,16 +5,8 @@ import { ListarHorariosDisponiveisUseCase } from "../application/listarHorariosD
 import type { Negocio } from "../domain/negocio.js";
 import { interpretarData } from "../domain/parseData.js";
 import { buscarServico } from "../domain/services.js";
+import { mensagens } from "../i18n/pt-BR.js";
 import { extrairNumero, normalizar } from "../utils/texto.js";
-import {
-  textoCatalogo,
-  textoHorarioFuncionamento,
-  textoListaAgendamentos,
-  textoListaHorarios,
-  textoListaServicos,
-  textoMenu,
-  textoMotivoRecusa,
-} from "./mensagens.js";
 import type { AgendaPort } from "./ports.js";
 import { CONTEXTO_INICIAL, EstadoConversa, type SessaoContexto } from "./states.js";
 
@@ -23,8 +15,8 @@ export interface RespostaRouter {
   mensagens: string[];
 }
 
-function respostaMenu(mensagens: string[], nomeNegocio: string): RespostaRouter {
-  return { contexto: CONTEXTO_INICIAL, mensagens: [...mensagens, textoMenu(nomeNegocio)] };
+function respostaMenu(msgs: string[], nomeNegocio: string): RespostaRouter {
+  return { contexto: CONTEXTO_INICIAL, mensagens: [...msgs, mensagens.menu(nomeNegocio)] };
 }
 
 /**
@@ -36,7 +28,7 @@ function respostaMenu(mensagens: string[], nomeNegocio: string): RespostaRouter 
  * A decisão de negócio em si (o horário pode ser confirmado? o cancelamento
  * é aceito?) mora em `src/application/` — o router só orquestra estado:
  * parseia o texto, delega ao caso de uso certo, e traduz o resultado em
- * mensagem + próximo estado (ver ADR 7).
+ * mensagem (via `src/i18n/pt-BR.ts`, ver ADR 8) + próximo estado (ver ADR 7).
  */
 export async function processarMensagem(
   textoRecebido: string,
@@ -90,21 +82,21 @@ async function tratarMenu(
     case 1:
       return {
         contexto: { estado: EstadoConversa.AGENDAR_SERVICO },
-        mensagens: [textoListaServicos(negocio.catalogoServicos)],
+        mensagens: [mensagens.listaServicos(negocio.catalogoServicos)],
       };
 
     case 2: {
       const agendamentos = await new ListarAgendamentosDoClienteUseCase(porta).executar({ telefone, agora });
       if (agendamentos.length === 0) {
-        return respostaMenu(["Você não tem nenhum agendamento marcado no momento."], negocio.nome);
+        return respostaMenu([mensagens.semAgendamentoMarcado()], negocio.nome);
       }
-      return respostaMenu([textoListaAgendamentos(agendamentos, negocio.catalogoServicos)], negocio.nome);
+      return respostaMenu([mensagens.listaAgendamentos(agendamentos, negocio.catalogoServicos)], negocio.nome);
     }
 
     case 3: {
       const agendamentos = await new ListarAgendamentosDoClienteUseCase(porta).executar({ telefone, agora });
       if (agendamentos.length === 0) {
-        return respostaMenu(["Você não tem nenhum agendamento pra cancelar."], negocio.nome);
+        return respostaMenu([mensagens.semAgendamentoParaCancelar()], negocio.nome);
       }
       return {
         contexto: {
@@ -112,27 +104,25 @@ async function tratarMenu(
           agendamentosOferecidos: agendamentos.map((a) => a.id),
         },
         mensagens: [
-          `${textoListaAgendamentos(agendamentos, negocio.catalogoServicos)}\n\nResponda com o número do que deseja cancelar, ou 0 para voltar.`,
+          `${mensagens.listaAgendamentos(agendamentos, negocio.catalogoServicos)}\n\n${mensagens.escolhaParaCancelar()}`,
         ],
       };
     }
 
     case 4:
-      return respostaMenu([textoCatalogo(negocio.catalogoServicos)], negocio.nome);
+      return respostaMenu([mensagens.catalogo(negocio.catalogoServicos)], negocio.nome);
 
     case 5:
-      return respostaMenu([textoHorarioFuncionamento(negocio.horarioFuncionamento)], negocio.nome);
+      return respostaMenu([mensagens.horarioFuncionamento(negocio.horarioFuncionamento)], negocio.nome);
 
     case 6:
       return {
         contexto: { estado: EstadoConversa.FALANDO_COM_ATENDENTE },
-        mensagens: [
-          "Certo! Um atendente vai continuar a conversa por aqui. Se quiser voltar ao assistente automático a qualquer momento, é só digitar *menu*.",
-        ],
+        mensagens: [mensagens.atendenteHumano()],
       };
 
     default:
-      return respostaMenu(["Não entendi essa opção 🤔"], negocio.nome);
+      return respostaMenu([mensagens.opcaoInvalida()], negocio.nome);
   }
 }
 
@@ -143,13 +133,13 @@ function tratarEscolhaServico(texto: string, negocio: Negocio): RespostaRouter {
   if (!servico) {
     return {
       contexto: { estado: EstadoConversa.AGENDAR_SERVICO },
-      mensagens: [`Não achei essa opção.\n\n${textoListaServicos(negocio.catalogoServicos)}`],
+      mensagens: [`${mensagens.servicoNaoEncontrado()}\n\n${mensagens.listaServicos(negocio.catalogoServicos)}`],
     };
   }
 
   return {
     contexto: { estado: EstadoConversa.AGENDAR_DATA, servicoSelecionado: servico.id },
-    mensagens: [`Beleza, *${servico.nome}*. Pra quando você quer agendar? Responda "hoje", "amanhã" ou uma data (ex: 05/10).`],
+    mensagens: [mensagens.servicoEscolhido(servico.nome)],
   };
 }
 
@@ -161,20 +151,17 @@ async function tratarEscolhaData(
   agora: Date,
 ): Promise<RespostaRouter> {
   const servico = contexto.servicoSelecionado ? buscarServico(negocio.catalogoServicos, contexto.servicoSelecionado) : undefined;
-  if (!servico) return respostaMenu(["Foi mal, perdi o fio da meada. Vamos começar de novo?"], negocio.nome);
+  if (!servico) return respostaMenu([mensagens.contextoPerdido()], negocio.nome);
 
   const data = interpretarData(texto, agora);
   if (!data) {
-    return {
-      contexto,
-      mensagens: ['Não entendi a data. Tente "hoje", "amanhã" ou o formato dd/mm (ex: 05/10).'],
-    };
+    return { contexto, mensagens: [mensagens.dataNaoReconhecida()] };
   }
 
   const livres = await new ListarHorariosDisponiveisUseCase(porta).executar({ negocio, servico, data, agora });
 
   if (livres.length === 0) {
-    return { contexto, mensagens: ["Não sobrou horário livre nesse dia pra esse serviço 😕 Tente outra data."] };
+    return { contexto, mensagens: [mensagens.semHorarioLivreNoDia()] };
   }
 
   return {
@@ -183,7 +170,7 @@ async function tratarEscolhaData(
       servicoSelecionado: servico.id,
       horariosOferecidos: livres.map((h) => h.toISOString()),
     },
-    mensagens: [textoListaHorarios(livres, servico)],
+    mensagens: [mensagens.listaHorarios(livres, servico)],
   };
 }
 
@@ -196,25 +183,25 @@ async function tratarEscolhaHorario(
   agora: Date,
 ): Promise<RespostaRouter> {
   const servico = contexto.servicoSelecionado ? buscarServico(negocio.catalogoServicos, contexto.servicoSelecionado) : undefined;
-  if (!servico) return respostaMenu(["Foi mal, perdi o fio da meada. Vamos começar de novo?"], negocio.nome);
+  if (!servico) return respostaMenu([mensagens.contextoPerdido()], negocio.nome);
 
   const numero = extrairNumero(texto);
   const oferecidos = contexto.horariosOferecidos ?? [];
   const isoEscolhido = numero ? oferecidos[numero - 1] : undefined;
 
   if (!isoEscolhido) {
-    return { contexto, mensagens: ["Escolhe um dos números da lista, por favor."] };
+    return { contexto, mensagens: [mensagens.escolhaHorarioInvalido()] };
   }
 
   const inicio = new Date(isoEscolhido);
   const resultado = await new ConfirmarAgendamentoUseCase(porta).executar({ negocio, servico, telefone, inicio, agora });
 
   if (!resultado.ok) {
-    const motivo = textoMotivoRecusa(resultado.motivo);
+    const motivo = mensagens.motivoRecusa(resultado.motivo);
     if (resultado.horariosAlternativos.length === 0) {
       return {
         contexto: { estado: EstadoConversa.AGENDAR_DATA, servicoSelecionado: servico.id },
-        mensagens: [`${motivo} E não sobrou outro horário livre nesse dia 😕 Tente outra data.`],
+        mensagens: [mensagens.semOutroHorarioNoDia(motivo)],
       };
     }
     return {
@@ -223,12 +210,12 @@ async function tratarEscolhaHorario(
         servicoSelecionado: servico.id,
         horariosOferecidos: resultado.horariosAlternativos.map((h) => h.toISOString()),
       },
-      mensagens: [`${motivo} Horários atualizados:\n\n${textoListaHorarios(resultado.horariosAlternativos, servico)}`],
+      mensagens: [mensagens.horariosAtualizados(motivo, mensagens.listaHorarios(resultado.horariosAlternativos, servico))],
     };
   }
 
   return respostaMenu(
-    [`✅ Agendamento confirmado! *${servico.nome}* — id #${resultado.id.slice(0, 8)}.\n\nTe esperamos na ${negocio.nome}!`],
+    [mensagens.agendamentoConfirmado(servico.nome, resultado.id.slice(0, 8), negocio.nome)],
     negocio.nome,
   );
 }
@@ -245,7 +232,7 @@ async function tratarCancelamento(
   const idEscolhido = numero ? ids[numero - 1] : undefined;
 
   if (!idEscolhido) {
-    return { contexto, mensagens: ["Escolhe um dos números da lista, ou 0 para voltar ao menu."] };
+    return { contexto, mensagens: [mensagens.escolhaCancelamentoInvalido()] };
   }
 
   const resultado = await new CancelarAgendamentoUseCase(porta).executar({
@@ -256,15 +243,10 @@ async function tratarCancelamento(
 
   if (!resultado.ok) {
     if (resultado.motivo === "nao_encontrado") {
-      return respostaMenu(["Não achei mais esse agendamento — talvez já tenha sido cancelado."], negocio.nome);
+      return respostaMenu([mensagens.agendamentoNaoEncontrado()], negocio.nome);
     }
-    return respostaMenu(
-      [
-        `Esse agendamento é em menos de ${negocio.antecedenciaMinimaCancelamentoHoras}h, não dá mais pra cancelar por aqui. Escolha a opção 6 no menu pra falar com um atendente.`,
-      ],
-      negocio.nome,
-    );
+    return respostaMenu([mensagens.antecedenciaInsuficiente(negocio.antecedenciaMinimaCancelamentoHoras)], negocio.nome);
   }
 
-  return respostaMenu(["Agendamento cancelado ✅"], negocio.nome);
+  return respostaMenu([mensagens.agendamentoCancelado()], negocio.nome);
 }
