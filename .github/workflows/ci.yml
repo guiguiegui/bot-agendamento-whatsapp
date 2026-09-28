@@ -18,6 +18,12 @@ jobs:
 
       - run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Audit (vulnerabilidades alta/crítica em dependências)
+        run: npm audit --audit-level=high
+
       - name: Typecheck
         run: npm run typecheck
 
