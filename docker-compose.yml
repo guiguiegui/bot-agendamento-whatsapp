@@ -1,0 +1,25 @@
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+  bot:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - redis
+    env_file: .env
+    environment:
+      # dentro da rede do compose o Redis se chama "redis", não "localhost"
+      REDIS_URL: redis://redis:6379
+    volumes:
+      - ./data:/app/data
+    # a Baileys imprime o QR code de conexão no log, na primeira vez:
+    #   docker compose logs -f bot
+    stdin_open: true
+    tty: true
+
+volumes:
+  redis-data:
