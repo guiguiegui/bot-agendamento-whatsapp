@@ -1,5 +1,13 @@
 import "dotenv/config";
 
+// Todo o cálculo de horário de funcionamento e agendamento (src/domain) usa
+// Date local (getDay/getHours) — sem isso, rodar num servidor com outro fuso
+// (ex: UTC, comum em VPS/containers) desloca o expediente inteiro. O
+// Dockerfile e o docker-compose já fixam TZ explicitamente; isso aqui é só
+// uma rede de segurança pra quem rodar `npm start` fora do Docker sem
+// configurar o fuso do sistema.
+process.env.TZ ??= "America/Sao_Paulo";
+
 export const config = {
   databasePath: process.env.DATABASE_PATH ?? "./data/bot.db",
   redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",

@@ -80,6 +80,24 @@ describe("processarMensagem — fluxo completo de agendamento", () => {
     // só o agendamento "roubado" existe, o do fluxo original não foi criado
     expect(porta.agendamentos).toHaveLength(1);
   });
+
+  it("avisa que o horário já passou (não que está 'ocupado') quando o cliente demora pra responder", async () => {
+    contexto = { estado: EstadoConversa.AGENDAR_SERVICO };
+    let resposta = await processarMensagem("1", contexto, TELEFONE, porta, AGORA); // corte
+    resposta = await processarMensagem("hoje", resposta.contexto, TELEFONE, porta, AGORA);
+    contexto = resposta.contexto;
+    const primeiroHorarioIso = contexto.horariosOferecidos?.[0];
+    expect(primeiroHorarioIso).toBeDefined();
+
+    // O cliente demora a responder: "agora" avança pra depois do horário oferecido.
+    const bemDepois = addMinutes(new Date(primeiroHorarioIso!), 5);
+
+    resposta = await processarMensagem("1", contexto, TELEFONE, porta, bemDepois);
+    expect(resposta.mensagens[0]).not.toMatch(/agendamento confirmado/i);
+    expect(resposta.mensagens[0]).not.toMatch(/ocupado/i);
+    expect(resposta.mensagens[0]).toMatch(/já passou/i);
+    expect(porta.agendamentos).toHaveLength(0);
+  });
 });
 
 describe("processarMensagem — cancelamento", () => {
