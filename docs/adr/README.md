@@ -12,3 +12,4 @@ Uma ADR não é atualizada depois de aceita — se uma decisão muda, cria-se um
 | [0004](0004-sqlite-sem-orm.md) | SQLite direto, sem ORM | Aceita |
 | [0005](0005-baileys-nao-oficial.md) | Baileys (WhatsApp Web não-oficial) em vez da API oficial da Meta | Aceita |
 | [0006](0006-multi-tenant-compartilhado.md) | Multi-tenant numa instância só, fila/worker compartilhados | Aceita |
+| [0007](0007-camada-de-casos-de-uso.md) | Camada de casos de uso separada da máquina de estados | Aceita |

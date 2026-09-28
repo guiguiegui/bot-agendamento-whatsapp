@@ -1,6 +1,9 @@
+import { CancelarAgendamentoUseCase } from "../application/cancelarAgendamento.js";
+import { ConfirmarAgendamentoUseCase } from "../application/confirmarAgendamento.js";
+import { ListarAgendamentosDoClienteUseCase } from "../application/listarAgendamentosDoCliente.js";
+import { ListarHorariosDisponiveisUseCase } from "../application/listarHorariosDisponiveis.js";
 import type { Negocio } from "../domain/negocio.js";
 import { interpretarData } from "../domain/parseData.js";
-import { horariosDisponiveis, podeCancelar, tentarAgendar } from "../domain/scheduling.js";
 import { buscarServico } from "../domain/services.js";
 import { extrairNumero, normalizar } from "../utils/texto.js";
 import {
@@ -29,6 +32,11 @@ function respostaMenu(mensagens: string[], nomeNegocio: string): RespostaRouter 
  * próxima mensagem e o próximo estado da conversa a partir do texto
  * recebido. Não conhece nada sobre WhatsApp, filas ou banco de dados — por
  * isso é 100% testável sem infraestrutura nenhuma (ver test/router.test.ts).
+ *
+ * A decisão de negócio em si (o horário pode ser confirmado? o cancelamento
+ * é aceito?) mora em `src/application/` — o router só orquestra estado:
+ * parseia o texto, delega ao caso de uso certo, e traduz o resultado em
+ * mensagem + próximo estado (ver ADR 7).
  */
 export async function processarMensagem(
   textoRecebido: string,
@@ -86,7 +94,7 @@ async function tratarMenu(
       };
 
     case 2: {
-      const agendamentos = await porta.listarAgendamentosFuturosDoCliente(telefone, agora);
+      const agendamentos = await new ListarAgendamentosDoClienteUseCase(porta).executar({ telefone, agora });
       if (agendamentos.length === 0) {
         return respostaMenu(["Você não tem nenhum agendamento marcado no momento."], negocio.nome);
       }
@@ -94,7 +102,7 @@ async function tratarMenu(
     }
 
     case 3: {
-      const agendamentos = await porta.listarAgendamentosFuturosDoCliente(telefone, agora);
+      const agendamentos = await new ListarAgendamentosDoClienteUseCase(porta).executar({ telefone, agora });
       if (agendamentos.length === 0) {
         return respostaMenu(["Você não tem nenhum agendamento pra cancelar."], negocio.nome);
       }
@@ -163,14 +171,7 @@ async function tratarEscolhaData(
     };
   }
 
-  const existentes = await porta.listarAgendamentosDoDia(data);
-  const livres = horariosDisponiveis({
-    horarioFuncionamento: negocio.horarioFuncionamento,
-    data,
-    duracaoMin: servico.duracaoMin,
-    agendamentosExistentes: existentes,
-    agora,
-  });
+  const livres = await new ListarHorariosDisponiveisUseCase(porta).executar({ negocio, servico, data, agora });
 
   if (livres.length === 0) {
     return { contexto, mensagens: ["Não sobrou horário livre nesse dia pra esse serviço 😕 Tente outra data."] };
@@ -206,28 +207,11 @@ async function tratarEscolhaHorario(
   }
 
   const inicio = new Date(isoEscolhido);
-  // Revalida contra o estado atual do banco: evita corrida entre dois clientes
-  // escolhendo o mesmo horário ao mesmo tempo.
-  const existentesAgora = await porta.listarAgendamentosDoDia(inicio);
-  const resultado = tentarAgendar({
-    horarioFuncionamento: negocio.horarioFuncionamento,
-    janelaAgendamentoDias: negocio.janelaAgendamentoDias,
-    inicio,
-    duracaoMin: servico.duracaoMin,
-    agendamentosExistentes: existentesAgora,
-    agora,
-  });
+  const resultado = await new ConfirmarAgendamentoUseCase(porta).executar({ negocio, servico, telefone, inicio, agora });
 
   if (!resultado.ok) {
     const motivo = textoMotivoRecusa(resultado.motivo);
-    const livres = horariosDisponiveis({
-      horarioFuncionamento: negocio.horarioFuncionamento,
-      data: inicio,
-      duracaoMin: servico.duracaoMin,
-      agendamentosExistentes: existentesAgora,
-      agora,
-    });
-    if (livres.length === 0) {
+    if (resultado.horariosAlternativos.length === 0) {
       return {
         contexto: { estado: EstadoConversa.AGENDAR_DATA, servicoSelecionado: servico.id },
         mensagens: [`${motivo} E não sobrou outro horário livre nesse dia 😕 Tente outra data.`],
@@ -237,21 +221,14 @@ async function tratarEscolhaHorario(
       contexto: {
         estado: EstadoConversa.AGENDAR_HORARIO,
         servicoSelecionado: servico.id,
-        horariosOferecidos: livres.map((h) => h.toISOString()),
+        horariosOferecidos: resultado.horariosAlternativos.map((h) => h.toISOString()),
       },
-      mensagens: [`${motivo} Horários atualizados:\n\n${textoListaHorarios(livres, servico)}`],
+      mensagens: [`${motivo} Horários atualizados:\n\n${textoListaHorarios(resultado.horariosAlternativos, servico)}`],
     };
   }
 
-  const { id } = await porta.criarAgendamento({
-    telefone,
-    servico: servico.id,
-    inicio: resultado.inicio,
-    fim: resultado.fim,
-  });
-
   return respostaMenu(
-    [`✅ Agendamento confirmado! *${servico.nome}* — id #${id.slice(0, 8)}.\n\nTe esperamos na ${negocio.nome}!`],
+    [`✅ Agendamento confirmado! *${servico.nome}* — id #${resultado.id.slice(0, 8)}.\n\nTe esperamos na ${negocio.nome}!`],
     negocio.nome,
   );
 }
@@ -271,12 +248,16 @@ async function tratarCancelamento(
     return { contexto, mensagens: ["Escolhe um dos números da lista, ou 0 para voltar ao menu."] };
   }
 
-  const agendamento = await porta.buscarAgendamentoPorId(idEscolhido);
-  if (!agendamento) {
-    return respostaMenu(["Não achei mais esse agendamento — talvez já tenha sido cancelado."], negocio.nome);
-  }
+  const resultado = await new CancelarAgendamentoUseCase(porta).executar({
+    idAgendamento: idEscolhido,
+    antecedenciaMinimaHoras: negocio.antecedenciaMinimaCancelamentoHoras,
+    agora,
+  });
 
-  if (!podeCancelar(negocio.antecedenciaMinimaCancelamentoHoras, agendamento.inicio, agora)) {
+  if (!resultado.ok) {
+    if (resultado.motivo === "nao_encontrado") {
+      return respostaMenu(["Não achei mais esse agendamento — talvez já tenha sido cancelado."], negocio.nome);
+    }
     return respostaMenu(
       [
         `Esse agendamento é em menos de ${negocio.antecedenciaMinimaCancelamentoHoras}h, não dá mais pra cancelar por aqui. Escolha a opção 6 no menu pra falar com um atendente.`,
@@ -285,6 +266,5 @@ async function tratarCancelamento(
     );
   }
 
-  await porta.cancelarAgendamento(idEscolhido);
   return respostaMenu(["Agendamento cancelado ✅"], negocio.nome);
 }
