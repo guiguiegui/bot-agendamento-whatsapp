@@ -6,6 +6,7 @@ import type { Negocio } from "../domain/negocio.js";
 import type { IMessagingClient } from "../whatsapp/types.js";
 import { criarLockPorChave } from "../utils/lockPorChave.js";
 import { logger } from "../utils/logger.js";
+import { registrarProcessamento } from "../utils/metricas.js";
 import { NOME_FILA_MENSAGENS, conexaoRedis, type JobMensagemEntrada } from "./queue.js";
 import { SessionStoreRedis } from "./sessionStore.js";
 
@@ -40,24 +41,34 @@ export function iniciarWorker(registros: Map<string, RegistroNegocio>): Worker {
         return;
       }
       const { negocio, porta, relatorios, cliente } = registro;
+      const log = logger.child({ negocioId, telefone, jobId: job.id });
+      const inicio = Date.now();
 
-      await comLockDoTelefone(`${negocioId}:${telefone}`, async () => {
-        if (negocio.numerosAdmin.includes(telefone) && texto.trim().startsWith("/")) {
-          const respostaAdmin = await processarComandoAdmin(texto, relatorios, negocio.catalogoServicos);
-          if (respostaAdmin) {
-            await cliente.enviarTexto(telefone, respostaAdmin);
-            return;
+      try {
+        await comLockDoTelefone(`${negocioId}:${telefone}`, async () => {
+          if (negocio.numerosAdmin.includes(telefone) && texto.trim().startsWith("/")) {
+            const respostaAdmin = await processarComandoAdmin(texto, relatorios, negocio.catalogoServicos);
+            if (respostaAdmin) {
+              await cliente.enviarTexto(telefone, respostaAdmin);
+              return;
+            }
           }
-        }
 
-        const contextoAtual = await sessoes.obter(negocioId, telefone);
-        const resposta = await processarMensagem(texto, contextoAtual, telefone, porta, negocio);
-        await sessoes.salvar(negocioId, telefone, resposta.contexto);
+          const contextoAtual = await sessoes.obter(negocioId, telefone);
+          const resposta = await processarMensagem(texto, contextoAtual, telefone, porta, negocio);
+          await sessoes.salvar(negocioId, telefone, resposta.contexto);
 
-        for (const mensagem of resposta.mensagens) {
-          await cliente.enviarTexto(telefone, mensagem);
-        }
-      });
+          for (const mensagem of resposta.mensagens) {
+            await cliente.enviarTexto(telefone, mensagem);
+          }
+        });
+        const duracaoMs = Date.now() - inicio;
+        registrarProcessamento(duracaoMs, true);
+        log.debug({ duracaoMs }, "mensagem processada");
+      } catch (erro) {
+        registrarProcessamento(Date.now() - inicio, false);
+        throw erro; // preserva o retry automático do BullMQ e o log em worker.on("failed") abaixo
+      }
     },
     { connection: conexaoRedis, concurrency: 5 },
   );

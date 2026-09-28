@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const VARS_RASTREADAS = ["TZ", "REDIS_URL", "ADMIN_PHONE_NUMBERS"] as const;
+const VARS_RASTREADAS = ["TZ", "REDIS_URL", "ADMIN_PHONE_NUMBERS", "HEALTH_PORT"] as const;
 
 describe("config", () => {
   const originais = Object.fromEntries(VARS_RASTREADAS.map((v) => [v, process.env[v]]));
@@ -71,6 +71,35 @@ describe("config", () => {
     it("rejeita número com '+', espaço ou hífen, no boot (fail-fast)", async () => {
       process.env.ADMIN_PHONE_NUMBERS = "+55 19 99123-4567";
       await expect(import("../src/config.js")).rejects.toThrow(/ADMIN_PHONE_NUMBERS contém um valor inválido/);
+    });
+  });
+
+  describe("HEALTH_PORT", () => {
+    it("usa 3000 como padrão quando não configurado", async () => {
+      delete process.env.HEALTH_PORT;
+      const { config } = await import("../src/config.js");
+      expect(config.healthPort).toBe(3000);
+    });
+
+    it("aceita uma porta customizada", async () => {
+      process.env.HEALTH_PORT = "8080";
+      const { config } = await import("../src/config.js");
+      expect(config.healthPort).toBe(8080);
+    });
+
+    it("rejeita valor não numérico, no boot (fail-fast)", async () => {
+      process.env.HEALTH_PORT = "abc";
+      await expect(import("../src/config.js")).rejects.toThrow(/HEALTH_PORT inválida/);
+    });
+
+    it("rejeita porta fora do range 1-65535, no boot (fail-fast)", async () => {
+      process.env.HEALTH_PORT = "70000";
+      await expect(import("../src/config.js")).rejects.toThrow(/HEALTH_PORT inválida/);
+    });
+
+    it("rejeita porta não inteira, no boot (fail-fast)", async () => {
+      process.env.HEALTH_PORT = "3000.5";
+      await expect(import("../src/config.js")).rejects.toThrow(/HEALTH_PORT inválida/);
     });
   });
 });

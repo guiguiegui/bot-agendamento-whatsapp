@@ -2,6 +2,8 @@ import { config } from "./config.js";
 import { AgendaRepositorySqlite } from "./db/agendaRepository.js";
 import { abrirBanco } from "./db/database.js";
 import { NegocioRepository } from "./db/negocioRepository.js";
+import { iniciarServidorSaude } from "./health.js";
+import { conexaoRedis } from "./queue/queue.js";
 import { iniciarWorker, type RegistroNegocio } from "./queue/worker.js";
 import { logger } from "./utils/logger.js";
 import { BaileysMessagingClient } from "./whatsapp/client.js";
@@ -41,6 +43,7 @@ async function main(): Promise<void> {
   }
 
   const worker = iniciarWorker(registros);
+  const servidorSaude = iniciarServidorSaude(db, conexaoRedis, config.healthPort);
 
   await Promise.all(clientesWhatsapp.map((cliente) => cliente.conectar()));
 
@@ -48,6 +51,7 @@ async function main(): Promise<void> {
 
   const encerrar = async (sinal: string) => {
     logger.info({ sinal }, "Encerrando...");
+    servidorSaude.close();
     await worker.close();
     db.close();
     process.exit(0);

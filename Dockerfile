@@ -31,4 +31,11 @@ COPY --from=build /app/dist ./dist
 # caminho (ver docker-compose.yml) pra não perder tudo a cada deploy.
 VOLUME ["/app/data"]
 
+EXPOSE 3000
+# Usa o fetch nativo do Node (sem instalar curl/wget na imagem -slim). Lê
+# HEALTH_PORT do ambiente do próprio container, então respeita um valor
+# customizado via docker-compose/.env sem precisar editar esta linha.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD node -e "fetch('http://localhost:'+(process.env.HEALTH_PORT||3000)+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 CMD ["node", "dist/index.js"]
