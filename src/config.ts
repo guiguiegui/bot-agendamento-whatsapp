@@ -55,6 +55,19 @@ function validarNumerosAdmin(bruto: string): string[] {
   return numeros;
 }
 
+/**
+ * Valida que uma variável de porta é um inteiro válido (1-65535) antes de
+ * tentar abrir um servidor nela — sem isso, um valor mal formatado só falha
+ * lá na hora do `server.listen()`, com um erro genérico do Node.
+ */
+function validarPorta(bruto: string, nomeVar: string): number {
+  const porta = Number(bruto);
+  if (!Number.isInteger(porta) || porta <= 0 || porta > 65535) {
+    throw new ErroDeConfiguracao(`${nomeVar} inválida: "${bruto}". Esperado um número de porta entre 1 e 65535.`);
+  }
+  return porta;
+}
+
 export const config = {
   databasePath: process.env.DATABASE_PATH ?? "./data/bot.db",
   redisUrl: validarRedisUrl(process.env.REDIS_URL ?? "redis://localhost:6379"),
@@ -62,4 +75,6 @@ export const config = {
   /** Números (formato internacional, só dígitos) autorizados a usar comandos de admin, ex: "5519991234567". */
   numerosAdmin: validarNumerosAdmin(process.env.ADMIN_PHONE_NUMBERS ?? ""),
   logLevel: process.env.LOG_LEVEL ?? "info",
+  /** Porta do servidor HTTP de health-check/métricas (ver src/health.ts). */
+  healthPort: validarPorta(process.env.HEALTH_PORT ?? "3000", "HEALTH_PORT"),
 };

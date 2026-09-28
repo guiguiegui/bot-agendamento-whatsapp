@@ -4,7 +4,7 @@
 
 Bot de atendimento e agendamento por WhatsApp para pequenos negócios (barbearias, salões, clínicas). Projeto de portfólio — mesmo cliente fictício da [landing page](../barbearia.html), pra mostrar o pacote completo: site + automação de atendimento.
 
-Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, multi-tenant de verdade (vários negócios, cada um com seu WhatsApp, na mesma instância), 99 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
+Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, multi-tenant de verdade (vários negócios, cada um com seu WhatsApp, na mesma instância), 113 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
 
 ## O que ele faz
 
@@ -38,7 +38,7 @@ A mensagem recebida vira um **job na fila** em vez de ser processada na hora. Is
 2. **Não trava o recebimento.** A conexão com o WhatsApp nunca fica esperando o banco responder — ela só enfileira e segue recebendo.
 3. **Idempotência.** Cada mensagem do WhatsApp tem um id único, usado como `jobId` — se a Baileys entregar o mesmo evento duas vezes (acontece), o bot não processa a mesma mensagem duplicada.
 
-A lógica de conversa (`src/conversation/router.ts`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Elas recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 99 testes rodando em poucos segundos. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade (ver [ADR 1](docs/adr/0001-arquitetura-hexagonal.md)).
+A lógica de conversa (`src/conversation/router.ts`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Elas recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 113 testes rodando em poucos segundos. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade (ver [ADR 1](docs/adr/0001-arquitetura-hexagonal.md)).
 
 ## Por que essas escolhas técnicas
 
@@ -75,11 +75,13 @@ docker compose up -d
 docker compose logs -f bot   # pra ver o QR code na primeira conexão
 ```
 
+O container expõe um `HEALTHCHECK` (`docker ps` mostra o status) e o bot serve `GET /health` (200 se banco e Redis estão respondendo, 503 senão) e `GET /metrics` (mensagens processadas, latência, contagem da fila) na porta `HEALTH_PORT` (padrão `3000`, configurável no `.env`).
+
 ## Testes
 
 ```bash
 npm run typecheck   # TypeScript em modo estrito
-npm test            # 99 testes: regras de agendamento, máquina de estados, SQLite, migrações, isolamento entre negócios
+npm test            # 113 testes: regras de agendamento, máquina de estados, SQLite, migrações, isolamento entre negócios
 npm run smoke       # opcional: fluxo completo contra um Redis local de verdade
 ```
 
