@@ -1,5 +1,5 @@
 # ---- build ----
-FROM node:22-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
+FROM node:24-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS build
 WORKDIR /app
 
 # better-sqlite3 compila um binding nativo no install (sem binário pré-buildado
@@ -15,7 +15,7 @@ RUN npm run build
 RUN npm prune --omit=dev
 
 # ---- runtime ----
-FROM node:22-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS runtime
+FROM node:24-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 # Regras de horário de funcionamento (src/domain) usam Date local — fixar o
