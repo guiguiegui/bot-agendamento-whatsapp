@@ -2,7 +2,6 @@ import type { Database } from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import type { AgendaPort, AgendamentoDoDia, AgendamentoResumo, RelatorioPort } from "../conversation/ports.js";
 import type { IntervaloAgendado } from "../domain/scheduling.js";
-import type { ServicoId } from "../domain/services.js";
 
 interface LinhaIntervalo {
   inicio: string;
@@ -49,7 +48,7 @@ export class AgendaRepositorySqlite implements AgendaPort, RelatorioPort {
 
   async criarAgendamento(input: {
     telefone: string;
-    servico: ServicoId;
+    servico: string;
     inicio: Date;
     fim: Date;
   }): Promise<{ id: string }> {
@@ -69,14 +68,14 @@ export class AgendaRepositorySqlite implements AgendaPort, RelatorioPort {
         "SELECT id, servico, inicio FROM agendamentos WHERE telefone = ? AND status = 'confirmado' AND inicio >= ? ORDER BY inicio ASC",
       )
       .all(telefone, agora.toISOString()) as LinhaResumo[];
-    return linhas.map((l) => ({ id: l.id, servico: l.servico as ServicoId, inicio: new Date(l.inicio) }));
+    return linhas.map((l) => ({ id: l.id, servico: l.servico, inicio: new Date(l.inicio) }));
   }
 
   async buscarAgendamentoPorId(id: string): Promise<AgendamentoResumo | null> {
     const linha = this.db
       .prepare("SELECT id, servico, inicio FROM agendamentos WHERE id = ? AND status = 'confirmado'")
       .get(id) as LinhaResumo | undefined;
-    return linha ? { id: linha.id, servico: linha.servico as ServicoId, inicio: new Date(linha.inicio) } : null;
+    return linha ? { id: linha.id, servico: linha.servico, inicio: new Date(linha.inicio) } : null;
   }
 
   async cancelarAgendamento(id: string): Promise<void> {
@@ -91,6 +90,6 @@ export class AgendaRepositorySqlite implements AgendaPort, RelatorioPort {
         "SELECT telefone, servico, inicio FROM agendamentos WHERE status = 'confirmado' AND inicio >= ? AND inicio < ? ORDER BY inicio ASC",
       )
       .all(inicioDia.toISOString(), fimDia.toISOString()) as LinhaResumoComTelefone[];
-    return linhas.map((l) => ({ telefone: l.telefone, servico: l.servico as ServicoId, inicio: new Date(l.inicio) }));
+    return linhas.map((l) => ({ telefone: l.telefone, servico: l.servico, inicio: new Date(l.inicio) }));
   }
 }

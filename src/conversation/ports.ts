@@ -1,9 +1,8 @@
 import type { IntervaloAgendado } from "../domain/scheduling.js";
-import type { ServicoId } from "../domain/services.js";
 
 export interface AgendamentoResumo {
   id: string;
-  servico: ServicoId;
+  servico: string;
   inicio: Date;
 }
 
@@ -17,7 +16,7 @@ export interface AgendaPort {
   listarAgendamentosDoDia(data: Date): Promise<IntervaloAgendado[]>;
   criarAgendamento(input: {
     telefone: string;
-    servico: ServicoId;
+    servico: string;
     inicio: Date;
     fim: Date;
   }): Promise<{ id: string }>;
@@ -28,7 +27,7 @@ export interface AgendaPort {
 
 export interface AgendamentoDoDia {
   telefone: string;
-  servico: ServicoId;
+  servico: string;
   inicio: Date;
 }
 

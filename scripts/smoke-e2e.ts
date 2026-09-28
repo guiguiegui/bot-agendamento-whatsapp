@@ -7,9 +7,9 @@
  * `npm run smoke` tendo um Redis local ligado (REDIS_URL no .env).
  */
 import { setTimeout as esperar } from "node:timers/promises";
-import { config } from "../src/config.js";
 import { AgendaRepositorySqlite } from "../src/db/agendaRepository.js";
 import { abrirBanco } from "../src/db/database.js";
+import { NegocioRepository } from "../src/db/negocioRepository.js";
 import { conexaoRedis, filaMensagens } from "../src/queue/queue.js";
 import { iniciarWorker } from "../src/queue/worker.js";
 import type { IMessagingClient } from "../src/whatsapp/types.js";
@@ -39,8 +39,10 @@ function proximaTercaFormatada(): string {
 async function main() {
   const db = abrirBanco(":memory:");
   const repo = new AgendaRepositorySqlite(db);
+  const negocio = new NegocioRepository(db).listarAtivos()[0];
+  if (!negocio) throw new Error("Nenhum negócio ativo seedado — smoke test não pode continuar.");
   const cliente = new ClienteFalso();
-  const worker = iniciarWorker(repo, repo, cliente);
+  const worker = iniciarWorker(repo, repo, cliente, negocio);
 
   // agendar -> corte -> próxima terça (dia útil garantido) -> primeiro horário
   const passos = ["1", "1", proximaTercaFormatada(), "1"];

@@ -1,6 +1,7 @@
 import { config } from "./config.js";
 import { AgendaRepositorySqlite } from "./db/agendaRepository.js";
 import { abrirBanco } from "./db/database.js";
+import { NegocioRepository } from "./db/negocioRepository.js";
 import { iniciarWorker } from "./queue/worker.js";
 import { logger } from "./utils/logger.js";
 import { BaileysMessagingClient } from "./whatsapp/client.js";
@@ -23,8 +24,15 @@ async function main(): Promise<void> {
   const db = abrirBanco(config.databasePath);
   const repositorio = new AgendaRepositorySqlite(db);
 
+  // Enquanto o bot só atende um negócio por instância (multi-conexão é uma
+  // evolução futura), usamos o primeiro negócio ativo cadastrado.
+  const negocio = new NegocioRepository(db).listarAtivos()[0];
+  if (!negocio) {
+    throw new Error("Nenhum negócio ativo cadastrado — rode as migrações (npm run db:migrate) ou verifique o banco.");
+  }
+
   const clienteWhatsapp = new BaileysMessagingClient();
-  const worker = iniciarWorker(repositorio, repositorio, clienteWhatsapp);
+  const worker = iniciarWorker(repositorio, repositorio, clienteWhatsapp, negocio);
 
   await clienteWhatsapp.conectar();
 
