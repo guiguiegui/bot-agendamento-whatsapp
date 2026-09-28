@@ -4,7 +4,7 @@
 
 Bot de atendimento e agendamento por WhatsApp para pequenos negócios (barbearias, salões, clínicas). Projeto de portfólio — mesmo cliente fictício da [landing page](../barbearia.html), pra mostrar o pacote completo: site + automação de atendimento.
 
-Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, multi-tenant de verdade (vários negócios, cada um com seu WhatsApp, na mesma instância), 113 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
+Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, multi-tenant de verdade (vários negócios, cada um com seu WhatsApp, na mesma instância), 125 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
 
 ## O que ele faz
 
@@ -25,8 +25,11 @@ WhatsApp  →  Baileys (conexão)  →  Fila (BullMQ/Redis)  →  Worker
                                                               │
                                               ┌───────────────┴───────────────┐
                                               ▼                               ▼
-                                    Regras de negócio puras           Sessão da conversa
-                                    (domain/scheduling.ts)                 (Redis)
+                                    Casos de uso (application/)         Sessão da conversa
+                                              │                              (Redis)
+                                              ▼
+                                    Regras de negócio puras
+                                    (domain/scheduling.ts)
                                               │
                                               ▼
                                      SQLite (agendaRepository.ts)
@@ -38,7 +41,7 @@ A mensagem recebida vira um **job na fila** em vez de ser processada na hora. Is
 2. **Não trava o recebimento.** A conexão com o WhatsApp nunca fica esperando o banco responder — ela só enfileira e segue recebendo.
 3. **Idempotência.** Cada mensagem do WhatsApp tem um id único, usado como `jobId` — se a Baileys entregar o mesmo evento duas vezes (acontece), o bot não processa a mesma mensagem duplicada.
 
-A lógica de conversa (`src/conversation/router.ts`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Elas recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 113 testes rodando em poucos segundos. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade (ver [ADR 1](docs/adr/0001-arquitetura-hexagonal.md)).
+A lógica de conversa (`src/conversation/router.ts`), os casos de uso (`src/application/`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Eles recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 125 testes rodando em poucos segundos. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade (ver [ADR 1](docs/adr/0001-arquitetura-hexagonal.md)). O `router.ts` só decide estado (qual mensagem, qual próximo passo); a decisão de negócio em si (o horário pode ser confirmado? o cancelamento é aceito?) mora nos casos de uso (ver [ADR 7](docs/adr/0007-camada-de-casos-de-uso.md)).
 
 ## Por que essas escolhas técnicas
 
@@ -48,6 +51,7 @@ Resumo rápido — o raciocínio completo de cada uma está nos [ADRs](docs/adr/
 - **SQLite direto (`better-sqlite3`), sem ORM** ([ADR 4](docs/adr/0004-sqlite-sem-orm.md)): um Postgres separado seria mais uma peça pra manter no ar sem ganho real na escala de pequenos negócios que esse bot atende — mesmo com vários negócios, ainda é um arquivo só, com isolamento lógico (coluna), não físico. `better-sqlite3` é síncrono (sem overhead de round-trip) e backup é copiar um arquivo.
 - **Redis + BullMQ pra fila e sessão** ([ADR 3](docs/adr/0003-fila-assincrona-bullmq-redis.md)): é a peça que realmente precisa ser compartilhada se um dia rodar mais de uma instância do bot, e já vem pronta pra isso.
 - **Máquina de estados explícita, não regex solto** ([ADR 2](docs/adr/0002-maquina-de-estados-explicita.md)): cada conversa tem um estado bem definido (`MENU`, `AGENDAR_DATA`, etc.), então "o que esse número '1' significa" nunca é ambíguo — depende só do estado atual, testado isoladamente.
+- **Casos de uso separados da máquina de estados** ([ADR 7](docs/adr/0007-camada-de-casos-de-uso.md)): `router.ts` decide só estado; a regra de negócio (horário pode ser confirmado? cancelamento é aceito?) mora em `src/application/`, testável sem precisar simular texto de conversa.
 
 ### Sobre a biblioteca do WhatsApp ([ADR 5](docs/adr/0005-baileys-nao-oficial.md))
 
@@ -81,7 +85,7 @@ O container expõe um `HEALTHCHECK` (`docker ps` mostra o status) e o bot serve 
 
 ```bash
 npm run typecheck   # TypeScript em modo estrito
-npm test            # 113 testes: regras de agendamento, máquina de estados, SQLite, migrações, isolamento entre negócios
+npm test            # 125 testes: regras de agendamento, casos de uso, máquina de estados, SQLite, migrações, isolamento entre negócios
 npm run smoke       # opcional: fluxo completo contra um Redis local de verdade
 ```
 
@@ -119,6 +123,7 @@ Nenhum desses passos toca na máquina de estados, na fila ou no código — é s
 ```
 src/
   domain/         regras de negócio puras (agendamento, catálogo, horários, negócio) — sem I/O
+  application/     casos de uso — orquestram domain/ + AgendaPort (confirmar, cancelar, listar)
   conversation/    máquina de estados da conversa + textos + porta (interface) pro banco
   db/              SQLite: migrações, conexão, repositórios que implementam as portas
   queue/           fila (BullMQ), worker (dispatch por negócio), sessão da conversa no Redis
