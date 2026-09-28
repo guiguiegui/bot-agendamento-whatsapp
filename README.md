@@ -4,7 +4,7 @@
 
 Bot de atendimento e agendamento por WhatsApp para pequenos negócios (barbearias, salões, clínicas). Projeto de portfólio — mesmo cliente fictício da [landing page](../barbearia.html), pra mostrar o pacote completo: site + automação de atendimento.
 
-Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, 29 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
+Não é um bot de palavra-chave. É uma máquina de estados de verdade, com fila assíncrona, banco de dados, multi-tenant de verdade (vários negócios, cada um com seu WhatsApp, na mesma instância), 99 testes automatizados (mais um smoke test opcional de ponta a ponta contra Redis real, `npm run smoke`) e arquitetura pensada pra rodar em produção, não só pra demo.
 
 ## O que ele faz
 
@@ -38,12 +38,13 @@ A mensagem recebida vira um **job na fila** em vez de ser processada na hora. Is
 2. **Não trava o recebimento.** A conexão com o WhatsApp nunca fica esperando o banco responder — ela só enfileira e segue recebendo.
 3. **Idempotência.** Cada mensagem do WhatsApp tem um id único, usado como `jobId` — se a Baileys entregar o mesmo evento duas vezes (acontece), o bot não processa a mesma mensagem duplicada.
 
-A lógica de conversa (`src/conversation/router.ts`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Elas recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 29 testes rodando em ~1 segundo. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade.
+A lógica de conversa (`src/conversation/router.ts`) e as regras de agendamento (`src/domain/scheduling.ts`) **não sabem que o WhatsApp existe**. Elas recebem uma interface (`AgendaPort`) e são 100% testáveis sem subir banco, fila ou conexão nenhuma — é por isso que dá pra ter 99 testes rodando em poucos segundos. A pasta `src/whatsapp` e `src/queue` são as únicas que conhecem infraestrutura de verdade.
 
 ## Por que essas escolhas técnicas
 
-- **SQLite direto (`better-sqlite3`), sem ORM**: esse bot roda numa instância só, pra um negócio só. Um ORM ou um Postgres separado seria mais uma peça pra manter no ar sem nenhum ganho real nessa escala. `better-sqlite3` é síncrono (sem overhead de round-trip) e o banco inteiro é um arquivo — backup é copiar um arquivo.
-- **Redis + BullMQ pra fila e sessão**: é a peça que realmente precisa ser compartilhada se um dia rodar mais de uma instância, e já vem pronta pra isso.
+- **Multi-tenant numa instância só, sem microsserviço por cliente**: cada negócio cadastrado (tabela `negocios`) tem sua própria conexão WhatsApp, catálogo, horário e política de cancelamento — isolados por `negocio_id` no banco — mas compartilham a mesma fila, worker e processo. Adicionar um negócio novo não exige subir infraestrutura nova (ver `## Cadastrando um negócio novo`).
+- **SQLite direto (`better-sqlite3`), sem ORM**: um Postgres separado seria mais uma peça pra manter no ar sem ganho real na escala de pequenos negócios que esse bot atende — mesmo com vários negócios, ainda é um arquivo só, com isolamento lógico (coluna), não físico. `better-sqlite3` é síncrono (sem overhead de round-trip) e backup é copiar um arquivo.
+- **Redis + BullMQ pra fila e sessão**: é a peça que realmente precisa ser compartilhada se um dia rodar mais de uma instância do bot, e já vem pronta pra isso.
 - **Máquina de estados explícita, não regex solto**: cada conversa tem um estado bem definido (`MENU`, `AGENDAR_DATA`, etc.), então "o que esse número '1' significa" nunca é ambíguo — depende só do estado atual, testado isoladamente.
 
 ### Sobre a biblioteca do WhatsApp
@@ -62,7 +63,7 @@ cp .env.example .env      # ajuste os valores se quiser
 npm run dev                # sobe o bot em modo desenvolvimento
 ```
 
-Na primeira execução, um QR code aparece no terminal — escaneie com o WhatsApp do número do negócio (**Aparelhos conectados → Conectar um aparelho**). As credenciais ficam salvas em `WHATSAPP_AUTH_DIR`, então não precisa escanear de novo nas próximas vezes.
+Na primeira execução, um QR code aparece no terminal pra cada negócio ativo cadastrado (recém-instalado, só o negócio de exemplo) — escaneie com o WhatsApp do número correspondente (**Aparelhos conectados → Conectar um aparelho**). As credenciais ficam salvas na pasta configurada em `whatsapp_auth_dir` daquele negócio (ver `## Cadastrando um negócio novo`), então não precisa escanear de novo nas próximas vezes.
 
 ### Com Docker
 
@@ -76,38 +77,51 @@ docker compose logs -f bot   # pra ver o QR code na primeira conexão
 
 ```bash
 npm run typecheck   # TypeScript em modo estrito
-npm test            # 29 testes: regras de agendamento, máquina de estados, SQLite
+npm test            # 99 testes: regras de agendamento, máquina de estados, SQLite, migrações, isolamento entre negócios
 npm run smoke       # opcional: fluxo completo contra um Redis local de verdade
 ```
 
 O `smoke` roda o mesmo caminho que um cliente real percorreria (menu → escolher serviço → escolher data → escolher horário → confirmação), mas passando pela fila e pelo Redis de verdade, só trocando o WhatsApp por um cliente falso que guarda as mensagens enviadas — é o mais perto de um teste real sem precisar de um número de WhatsApp conectado.
 
-## Adaptando para um cliente de verdade
+## Cadastrando um negócio novo
 
-Tudo que muda de um negócio pro outro está isolado em `src/domain/`:
+Cada negócio (catálogo, horário, política de cancelamento, números de admin, WhatsApp próprio) é uma linha na tabela `negocios` — não é mais código. Não há UI de administração, então o cadastro é feito por um CLI:
 
-| O que mudar | Onde |
-|---|---|
-| Nome do negócio, textos do menu | `src/conversation/mensagens.ts` |
-| Catálogo de serviços, preços, duração | `src/domain/services.ts` |
-| Horário de funcionamento | `src/domain/businessHours.ts` |
-| Antecedência mínima de cancelamento, janela de agendamento | `src/domain/businessHours.ts` |
-| Números com acesso a comandos de admin | `.env` → `ADMIN_PHONE_NUMBERS` |
+```bash
+# 1. copie o template e ajuste os valores pro negócio novo
+cp negocio.exemplo.json meu-negocio.json
 
-Nenhuma dessas mudanças toca na máquina de estados, na fila ou no banco.
+# 2. cadastre (id é o identificador único do negócio — usado em logs e paths)
+npm run negocio -- criar --id meu-negocio --config meu-negocio.json
+
+# 3. reinicie o bot — ele carrega os negócios ativos no boot e sobe uma conexão
+#    WhatsApp nova (um QR code novo pra escanear) pra cada um
+npm run dev
+```
+
+Outros comandos:
+
+```bash
+npm run negocio -- listar               # todos os negócios, ativos e inativos
+npm run negocio -- desativar --id <id>  # para de atender por esse negócio (não deleta o histórico)
+```
+
+Importante: `whatsappAuthDir` no JSON precisa apontar pra um subdiretório dentro de `./data/` (ex: `./data/auth-meu-negocio`) — é o volume que o Docker já monta; fora dele, a sessão do WhatsApp não sobrevive a um restart do container.
+
+Nenhum desses passos toca na máquina de estados, na fila ou no código — é só dado.
 
 ## Estrutura do projeto
 
 ```
 src/
-  domain/         regras de negócio puras (agendamento, catálogo, horários) — sem I/O
+  domain/         regras de negócio puras (agendamento, catálogo, horários, negócio) — sem I/O
   conversation/    máquina de estados da conversa + textos + porta (interface) pro banco
-  db/              SQLite: schema, conexão, repositório que implementa a porta
-  queue/           fila (BullMQ), worker, sessão da conversa no Redis
-  whatsapp/        adaptador Baileys + interface de mensageria
+  db/              SQLite: migrações, conexão, repositórios que implementam as portas
+  queue/           fila (BullMQ), worker (dispatch por negócio), sessão da conversa no Redis
+  whatsapp/        adaptador Baileys + interface de mensageria (uma instância por negócio)
   commands/        comandos administrativos (fora do fluxo do cliente)
 test/              testes unitários e de integração (SQLite real)
-scripts/           smoke test de ponta a ponta (fila + Redis reais)
+scripts/           smoke test de ponta a ponta (fila + Redis reais) e o CLI de negócios
 ```
 
 ---
