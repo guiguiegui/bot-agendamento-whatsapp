@@ -24,7 +24,7 @@
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.9",
     "better-sqlite3": "^13.0.3",
-    "bullmq": "^5.12.12",
+    "bullmq": "^6.0.0",
     "date-fns": "^4.4.0",
     "dotenv": "^16.4.5",
     "ioredis": "^5.4.1",
