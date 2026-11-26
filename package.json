@@ -27,7 +27,7 @@
     "bullmq": "^5.12.12",
     "date-fns": "^4.4.0",
     "dotenv": "^16.4.5",
-    "ioredis": "^5.4.1",
+    "ioredis": "^6.0.0",
     "pino": "^9.4.0",
     "qrcode-terminal": "^0.12.0"
   },
